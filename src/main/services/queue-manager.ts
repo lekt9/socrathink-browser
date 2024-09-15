@@ -5,9 +5,10 @@ import { handleContextOmnidoraRequest } from '..';
 import { sha256 } from 'hash-wasm';
 import { CrawlStore } from '~/renderer/views/app/store/crawl-store';
 import { getAuthInfo, SerializableAuthInfo } from './context';
-import { ModuleThread, Pool } from 'threads';
+import { Pool, ModuleThread } from 'threads';
 import { extractQueryParams } from '~/utils/url';
 import { parseMarkdown } from '~/utils/parse';
+import { CrawlerWorker } from './worker';
 
 export interface CrawledData {
     url: string;
@@ -28,7 +29,7 @@ export class QueueManager {
     private readonly MAX_CRAWLS: number = -1;
     private crawlCount: number = 0;
     private crawlStore: CrawlStore;
-    private pool: Pool<ModuleThread>;
+    private pool: Pool<CrawlerWorker>;
     private isProcessing: boolean = false;
 
     private allowedContentTypes: Set<string> = new Set([
@@ -45,7 +46,7 @@ export class QueueManager {
         'application/pdf'
     ]);
 
-    constructor(crawlStore: CrawlStore, pool: Pool<ModuleThread>) {
+    constructor(crawlStore: CrawlStore, pool: Pool<CrawlerWorker>) {
         this.crawlStore = crawlStore;
         this.pool = pool;
     }

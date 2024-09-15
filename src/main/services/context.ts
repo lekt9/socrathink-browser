@@ -89,7 +89,7 @@ export class ContextService {
             .sort((a, b) => b.timestamp - a.timestamp);
 
         // Get the top 10 depth 0 entries
-        const top10Depth0 = sortedDepth0Entries.slice(0, 10);
+        const top10Depth0 = sortedDepth0Entries.slice(0, 80);
 
         // Filter and sort non-depth 0 entries by timestamp, most recent first
         const sortedNonDepth0Entries = allEntries

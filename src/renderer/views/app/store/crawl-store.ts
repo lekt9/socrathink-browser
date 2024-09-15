@@ -14,7 +14,6 @@ export interface StoredCrawlData {
     timestamp: number;
     content?: string;
     depth: number;
-    // permutations: Record<string, string>[];
 }
 
 export interface DomainStatus {
@@ -29,6 +28,7 @@ export class CrawlStore {
         domainStatus: DomainStatusCollection;
     }>;
     private requestCount: number = 0;
+    private readonly MAX_ITEMS = 5000;
 
     private constructor() { }
 
@@ -62,13 +62,6 @@ export class CrawlStore {
         return await sha256(str);
     }
 
-    // private updatePermutations(existingPermutations: Record<string, string>[], newParams: Record<string, string>): Record<string, string>[] {
-    //     if (!existingPermutations.some(p => JSON.stringify(p) === JSON.stringify(newParams))) {
-    //         existingPermutations.push(newParams);
-    //     }
-    //     return existingPermutations;
-    // }
-
     public async add(url: string, rawHtml: string, content: string, depth: number, jsonResponse?: object): Promise<boolean> {
         if (!isContentUseful(content)) return false;
         console.log("content useful", content);
@@ -76,7 +69,7 @@ export class CrawlStore {
         if (!domain) return false;
 
         const { strippedUrl, params } = extractQueryParams(url);
-        const contentHash = await this.hashString(content); // Hash the raw HTML instead of processed content
+        const contentHash = await this.hashString(content);
 
         const urlHash = await this.hashString(strippedUrl);
 
@@ -86,9 +79,18 @@ export class CrawlStore {
                 url: strippedUrl,
                 contentHash,
                 timestamp: Date.now(),
-                content: content, // Store the processed content
+                content: content,
                 depth: depth,
             };
+
+            // Check if we've reached the maximum number of items
+            const currentCount = await this.size();
+            if (currentCount >= this.MAX_ITEMS) {
+                // Remove the oldest entries
+                const numToRemove = currentCount - this.MAX_ITEMS + 1;
+                await this.removeOldestEntries(numToRemove);
+            }
+
             await this.db.crawls.insert(newEntry);
 
             console.log("Stored new entry", newEntry);
@@ -97,6 +99,17 @@ export class CrawlStore {
         } catch (error) {
             console.error("Error adding entry:", error);
             return false;
+        }
+    }
+
+    private async removeOldestEntries(count: number): Promise<void> {
+        const oldestEntries = await this.db.crawls.find()
+            .sort({ timestamp: 1 })
+            .limit(count)
+            .exec();
+
+        for (const entry of oldestEntries) {
+            await entry.remove();
         }
     }
 

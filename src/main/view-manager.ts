@@ -28,7 +28,7 @@ export class ViewManager extends EventEmitter {
   public _fullscreen = false;
 
   public incognito: boolean;
-  private pool: Pool<ModuleThread>;
+  private pool: Pool<CrawlerWorker>;
 
   private queueManager: QueueManager;
 
@@ -54,15 +54,10 @@ export class ViewManager extends EventEmitter {
     CrawlStore.getInstance().then(store => {
       this.crawlStore = store;
 
-      this.pool = Pool(async () => {
-        try {
-          const worker = await spawn<CrawlerWorker>(new Worker(workerPath));
-          return worker;
-        } catch (error) {
-          dialog.showErrorBox('Error Spawning Worker', `${error}`);
-          throw error;
-        }
-      }, 2);
+      this.pool = Pool(() => spawn<CrawlerWorker>(new Worker(workerPath)), {
+        size: 2,
+        concurrency: 2
+      });
     });
 
 
