@@ -25,7 +25,7 @@ export class QueueManager {
     private crawledHashes: Set<string> = new Set();
     private requestCount: number = 0;
     private urlDepthMap: Map<string, number> = new Map();
-    private readonly MAX_DEPTH = 1;
+    private readonly MAX_DEPTH = 2;
     private readonly MAX_CRAWLS: number = -1;
     private crawlCount: number = 0;
     private crawlStore: CrawlStore;

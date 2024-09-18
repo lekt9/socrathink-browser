@@ -28,7 +28,7 @@ export class CrawlStore {
         domainStatus: DomainStatusCollection;
     }>;
     private requestCount: number = 0;
-    private readonly MAX_ITEMS = 5000;
+    private readonly MAX_ITEMS = 200;
 
     private constructor() { }
 
@@ -86,9 +86,8 @@ export class CrawlStore {
             // Check if we've reached the maximum number of items
             const currentCount = await this.size();
             if (currentCount >= this.MAX_ITEMS) {
-                // Remove the oldest entries
-                const numToRemove = currentCount - this.MAX_ITEMS + 1;
-                await this.removeOldestEntries(numToRemove);
+                // Remove the oldest entry
+                await this.removeOldestEntries(1);
             }
 
             await this.db.crawls.insert(newEntry);
@@ -104,7 +103,7 @@ export class CrawlStore {
 
     private async removeOldestEntries(count: number): Promise<void> {
         const oldestEntries = await this.db.crawls.find()
-            .sort({ timestamp: 1 })
+            .sort({ timestamp: "asc" })
             .limit(count)
             .exec();
 
