@@ -165,5 +165,6 @@
     "uuid": "^10.0.0",
     "vectra": "^0.7.6",
     "whisper-turbo": "^0.11.0"
-  }
+  },
+  "packageManager": "yarn@4.5.0"
 }

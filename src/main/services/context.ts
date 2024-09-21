@@ -5,6 +5,8 @@ import { getUserAgentForURL } from '../user-agent';
 import { Application } from '../application';
 import { hybridFetch } from '~/utils/hybrid-fetch';
 import { CrawlStore, StoredCrawlData } from '~/renderer/views/app/store/crawl-store';
+import { async } from 'rxjs';
+import { NetworkStore } from '~/renderer/views/app/store/network-store';
 
 export class ContextService {
     constructor() {
@@ -58,6 +60,44 @@ export class ContextService {
                 };
             }
         });
+        ipcMain.handle('search-tools', async (event, query: string, topK: number = 10) => {
+            try {
+                const networkStore = await NetworkStore;
+                const results = await networkStore.searchTools(query, topK);
+                return {
+                    ok: true,
+                    status: 200,
+                    data: results,
+                };
+            } catch (error) {
+                console.error('Search tools error:', error);
+                return {
+                    ok: false,
+                    status: 500,
+                    data: 'Internal server error',
+                };
+            }
+        });
+
+        ipcMain.handle('generate-json-schema', async (event, baseUrl: string, path: string) => {
+            try {
+                const networkStore = await NetworkStore;
+                const schema = await networkStore.generateJsonSchema(baseUrl, path);
+                return {
+                    ok: true,
+                    status: 200,
+                    data: schema,
+                };
+            } catch (error) {
+                console.error('Generate JSON schema error:', error);
+                return {
+                    ok: false,
+                    status: 500,
+                    data: 'Internal server error',
+                };
+            }
+        });
+
 
         ipcMain.handle('fetch-context', async (event) => {
             try {

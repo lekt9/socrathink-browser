@@ -2,7 +2,6 @@ import { CrawlsCollection, createDatabase, DomainStatusCollection, NetworkCollec
 import { addRxPlugin, createRxDatabase, RxDatabase, RxCollection, RxJsonSchema } from 'rxdb';
 import { RxDBUpdatePlugin } from 'rxdb/plugins/update';
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
-import { pipeline } from "@xenova/transformers";
 import { sha256 } from 'hash-wasm';
 
 /**
@@ -110,25 +109,47 @@ const embeddingsSchema: RxJsonSchema<EmbeddingDocument> = {
   indexes: ['idx0', 'idx1', 'idx2', 'idx3', 'idx4']
 };
 
+class EmbeddingPipeline {
+  static task = 'feature-extraction';
+  static model = 'Xenova/all-MiniLM-L6-v2';
+  static instance = null;
+
+  static async getInstance(progress_callback = null) {
+    if (this.instance === null) {
+      // Dynamically import the Transformers.js library
+      let { pipeline, env } = await import('@xenova/transformers');
+
+      // NOTE: Uncomment this to change the cache directory
+      // env.cacheDir = './.cache';
+
+      this.instance = pipeline(this.task, this.model, { progress_callback });
+    }
+
+    return this.instance;
+  }
+}
+
 /**
  * Class representing the network store with search capabilities.
  */
 export class NetworkStore {
+  static searchTools(query: string, topK: number) {
+    throw new Error('Method not implemented.');
+  }
+  static generateJsonSchema(baseUrl: string, path: string) {
+    throw new Error('Method not implemented.');
+  }
   private static instance: NetworkStore;
-  private db: RxDatabase<{
-    crawls: CrawlsCollection,
-    network: NetworkCollection,
-    domainStatus: DomainStatusCollection,
-    embeddings: EmbeddingsCollection
+  private db!: RxDatabase<{
+    crawls: CrawlsCollection;
+    network: NetworkCollection;
+    domainStatus: DomainStatusCollection;
+    embeddings: EmbeddingsCollection;
   }>;
   private readonly MAX_ITEMS = 200;
-  private pipePromise: Promise<any>;
-  private sampleVectors: number[][] = [
-  ];
+  private sampleVectors: number[][] = [];
 
-  private constructor() {
-    this.pipePromise = pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-  }
+  private constructor() { }
 
   /**
    * Retrieves the singleton instance of NetworkStore.
@@ -150,72 +171,28 @@ export class NetworkStore {
       storage: getRxStorageDexie()
     });
 
-    await this.db.addCollections({
-      crawls: {
-        schema: {
-          // Define your crawls schema here
-          version: 0,
-          primaryKey: 'id',
-          type: 'object',
-          properties: {
-            id: { type: 'string' },
-            // Add other properties as needed
-          },
-          required: ['id']
-        }
-      },
-      network: {
-        schema: {
-          version: 0,
-          primaryKey: 'requestId',
-          type: 'object',
-          properties: {
-            requestId: { type: 'string' },
-            urlHash: { type: 'string' },
-            baseUrl: { type: 'string' },
-            path: { type: 'string' },
-            queryParams: { type: 'object' },
-            pathParams: { type: 'array', items: { type: 'string' } },
-            method: { type: 'string' },
-            requestHeaders: { type: 'object' },
-            requestBody: { type: 'string' },
-            responseStatus: { type: 'number' },
-            responseHeaders: { type: 'object' },
-            responseBody: { type: 'string' },
-            contentHash: { type: 'string' },
-            timestamp: { type: 'number' },
-            parentUrlHash: { type: 'string' },
-            embedding: { type: 'array', items: { type: 'number' } }
-          },
-          required: ['requestId', 'urlHash', 'baseUrl', 'path', 'method', 'requestHeaders', 'responseStatus', 'responseHeaders', 'contentHash', 'timestamp']
-        }
-      },
-      domainStatus: {
-        schema: {
-          // Define your domainStatus schema here
-          version: 0,
-          primaryKey: 'id',
-          type: 'object',
-          properties: {
-            id: { type: 'string' },
-            // Add other properties as needed
-          },
-          required: ['id']
-        }
-      },
-      embeddings: {
-        schema: embeddingsSchema
-      }
+    const collections = await createDatabase(this.db);
+
+    // Add the embeddings collection
+    collections.embeddings = await this.db.addCollection({
+      name: 'embeddings',
+      schema: embeddingsSchema
     });
+
+    // Assign the collections to this.db
+    this.db.crawls = collections.crawls;
+    this.db.network = collections.network;
+    this.db.domainStatus = collections.domainStatus;
+    this.db.embeddings = collections.embeddings;
 
     // Initialize or load sample vectors
     // You can load these from a file or define them statically
     // Example:
-    // this.sampleVectors = [
-    //   [0.1, 0.2, 0.3, ..., 0.768],
-    //   [0.4, 0.5, 0.6, ..., 0.123],
-    //   ...
-    // ];
+    this.sampleVectors = [
+      // [0.1, 0.2, 0.3, /* ... */, 0.768],
+      // [0.4, 0.5, 0.6, /* ... */, 0.123],
+      // ... add more sample vectors as needed
+    ];
   }
 
   /**
@@ -354,7 +331,7 @@ export class NetworkStore {
    */
   private async generateEmbedding(entry: StoredNetworkData): Promise<number[] | null> {
     try {
-      const pipe = await this.pipePromise;
+      const pipe = await EmbeddingPipeline.getInstance();
       let textToEmbed = entry.baseUrl;
       if (entry.requestBody) {
         textToEmbed += ` ${entry.requestBody}`;
@@ -633,7 +610,7 @@ export class NetworkStore {
    */
   private async getEmbeddingFromText(text: string): Promise<number[]> {
     try {
-      const pipe = await this.pipePromise;
+      const pipe = await EmbeddingPipeline.getInstance();
       const output = await pipe(text, {
         pooling: "mean",
         normalize: true,

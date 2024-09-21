@@ -23,7 +23,13 @@ contextBridge.exposeInMainWorld('authedFetch', async (url: string, options = {})
 contextBridge.exposeInMainWorld('fetchContext', async (url: string) => {
   return ipcRenderer.invoke('fetch-context', url);
 });
+contextBridge.exposeInMainWorld('searchTools', async (query: string, topK: number = 10) => {
+  return ipcRenderer.invoke('search-tools', query, topK);
+});
 
+contextBridge.exposeInMainWorld('generateJsonSchema', async (baseUrl: string, path: string) => {
+  return ipcRenderer.invoke('generate-json-schema', baseUrl, path);
+});
 const goBack = async () => {
   await ipcRenderer.invoke(`web-contents-call`, {
     webContentsId: tabId,
