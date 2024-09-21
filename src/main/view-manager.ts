@@ -14,6 +14,7 @@ import { EventEmitter } from 'events';
 import { Application } from './application';
 import { QueueManager } from './services/queue-manager';
 import { CrawlStore } from '~/renderer/views/app/store/crawl-store';
+import { NetworkStore } from '~/renderer/views/app/store/network-store';
 
 
 const workerPath = app.isPackaged
@@ -33,6 +34,8 @@ export class ViewManager extends EventEmitter {
   private queueManager: QueueManager;
 
   private crawlStore: CrawlStore;
+
+  private networkStore: NetworkStore;
 
   private readonly window: AppWindow;
 
@@ -59,7 +62,6 @@ export class ViewManager extends EventEmitter {
         concurrency: 2
       });
     });
-
 
     const { id } = window.win;
     ipcMain.handle(`view-create-${id}`, (e, details) => {
@@ -155,7 +157,11 @@ export class ViewManager extends EventEmitter {
     hidden = false,
     scrollToText?: string
   ) {
-    const view = new View(this.window, details.url, this.incognito, this.crawlStore, this.pool);
+    NetworkStore.getInstance().then((store) => {
+      this.networkStore = store
+    });
+
+    const view = new View(this.window, details.url, this.incognito, this.crawlStore, this.networkStore, this.pool);
 
     // Adjust the initial bounds of the BrowserView
     const { width, height } = this.window.win.getContentBounds();

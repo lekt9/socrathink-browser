@@ -23,6 +23,7 @@ import { QueueManager } from './services/queue-manager';
 import { DevToolsCrawler } from './services/devtools-crawler';
 import { CrawlStore } from '~/renderer/views/app/store/crawl-store';
 import { ModuleThread, Pool } from 'threads';
+import { NetworkStore } from '~/renderer/views/app/store/network-store';
 
 interface IAuthInfo {
   url: string;
@@ -44,6 +45,7 @@ export class View {
   private queueManager: QueueManager;
   private devToolsCrawler: DevToolsCrawler;
   private crawlStore: CrawlStore;
+  private networkStore: NetworkStore;
   private pool: Pool<ModuleThread>;
   private readonly window: AppWindow;
 
@@ -73,7 +75,7 @@ export class View {
 
   private lastUrl = '';
 
-  public constructor(window: AppWindow, url: string, incognito: boolean, crawlStore: CrawlStore, pool: Pool<ModuleThread>) {
+  public constructor(window: AppWindow, url: string, incognito: boolean, crawlStore: CrawlStore, networkStore: NetworkStore, pool: Pool<ModuleThread>) {
     this.browserView = new BrowserView({
       webPreferences: {
         preload: `${app.getAppPath()}/build/view-preload.bundle.js`,
@@ -86,6 +88,7 @@ export class View {
         javascript: true,
       },
     });
+    this.networkStore = networkStore;
 
     this.browserView.setBackgroundColor('#FFFFFFFF');
     this.pool = pool
@@ -148,7 +151,7 @@ export class View {
       this.emitEvent('did-navigate', url);
       await this.addHistoryItem(url);
       await this.updateURL(url);
-      this.devToolsCrawler = new DevToolsCrawler(this.webContents, this.queueManager, this.crawlStore)
+      this.devToolsCrawler = new DevToolsCrawler(this.networkStore, this.webContents, this.queueManager)
 
     });
 

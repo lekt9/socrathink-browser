@@ -1,7 +1,6 @@
 import { BrowserView, app, ipcMain, BrowserWindow } from 'electron';
 import { join } from 'path';
 import { roundifyRectangle } from '../services/dialogs-service';
-import { DevToolsCrawler } from '../services/devtools-crawler';
 
 interface IOptions {
   name: string;

@@ -87,12 +87,12 @@ export class Application {
           this.windows.current = this.windows.open();
         }
         this.windows.current.win.focus();
-        this.windows.current.viewManager.create({
+        await this.windows.current.viewManager.create({
           url: url,
           active: true,
         });
-        this.windows.current.win.webContents.once('dom-ready', () => {
-          this.windows.current.viewManager.create({
+        this.windows.current.win.webContents.once('dom-ready', async () => {
+          await this.windows.current.viewManager.create({
             url: url,
             active: true,
           });
