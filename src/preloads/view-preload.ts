@@ -13,6 +13,20 @@ declare global {
   interface Window {
     authedFetch: (url: string, options?: any) => Promise<any>;
     fetchContext: (url: string) => Promise<any>;
+    searchTools: (query: string, topK?: number) => Promise<any>;
+    generateJsonSchema: (baseUrl: string, path: string) => Promise<any>;
+    embed: {
+      run: (text: string) => Promise<any>;
+    };
+    process: typeof process;
+    settings: any;
+    require: (id: string) => any;
+    theme?: any;
+    errorURL?: string;
+    getHistory?: () => Promise<any>;
+    removeHistory?: (ids: string[]) => void;
+    getTopSites?: (count: number) => Promise<any>;
+    updateSettings?: (data: any) => void;
   }
 }
 
@@ -29,6 +43,9 @@ contextBridge.exposeInMainWorld('searchTools', async (query: string, topK: numbe
 
 contextBridge.exposeInMainWorld('generateJsonSchema', async (baseUrl: string, path: string) => {
   return ipcRenderer.invoke('generate-json-schema', baseUrl, path);
+});
+contextBridge.exposeInMainWorld('embed', {
+  run: (text: string) => ipcRenderer.invoke('transformers:run', text)
 });
 const goBack = async () => {
   await ipcRenderer.invoke(`web-contents-call`, {

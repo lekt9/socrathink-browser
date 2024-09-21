@@ -7,6 +7,7 @@ import { hybridFetch } from '~/utils/hybrid-fetch';
 import { CrawlStore, StoredCrawlData } from '~/renderer/views/app/store/crawl-store';
 import { async } from 'rxjs';
 import { NetworkStore } from '~/renderer/views/app/store/network-store';
+import { run } from '~/utils/model';
 
 export class ContextService {
     constructor() {
@@ -14,6 +15,7 @@ export class ContextService {
     }
 
     private setupIpcHandlers() {
+        ipcMain.handle('transformers:run', run);
         ipcMain.handle('authed-fetch', async (event, url: string, options: AuthFetchOptions = {}) => {
             try {
                 if (url && url.length > 0) {
