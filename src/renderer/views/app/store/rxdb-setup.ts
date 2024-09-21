@@ -5,13 +5,11 @@ import { StoredNetworkData } from './network-store';
 
 export type CrawlsCollection = RxCollection<StoredCrawlData>;
 export type NetworkCollection = RxCollection<StoredNetworkData>;
-export type DomainStatusCollection = RxCollection<DomainStatusDocType>;
 export type EmbeddingsCollection = RxCollection<EmbeddingDocument>;
 
 export type MyDatabaseCollections = {
     crawls: CrawlsCollection;
     network: NetworkCollection;
-    domainStatus: DomainStatusCollection;
     embeddings: EmbeddingsCollection;
 };
 
@@ -99,10 +97,6 @@ const embeddingsSchema: RxJsonSchema<EmbeddingDocument> = {
     indexes: ['idx0', 'idx1', 'idx2', 'idx3', 'idx4'],
 };
 
-export interface DomainStatusDocType {
-    domain: string;
-    isCompleted: boolean;
-}
 
 export interface EmbeddingDocument {
     id: string;
@@ -128,9 +122,6 @@ export async function createDatabase(): Promise<RxDatabase<MyDatabaseCollections
         },
         network: {
             schema: networkSchema,
-        },
-        domainStatus: {
-            schema: domainStatusSchema,
         },
         embeddings: {
             schema: embeddingsSchema,
