@@ -5,7 +5,7 @@ const CopyPlugin = require('copy-webpack-plugin');
 const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer');
 const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
-const ThreadsPlugin = require('threads-plugin')
+const ThreadsPlugin = require('threads-plugin');
 const path = require('path');
 
 let terser = require('terser');
@@ -20,7 +20,7 @@ const mainConfig = getConfig({
   watch: dev,
   entry: {
     main: './src/main',
-    worker: './src/main/services/worker.ts', 
+    worker: './src/main/services/worker.ts',
   },
   output: {
     filename: '[name].bundle.js',
@@ -30,8 +30,7 @@ const mainConfig = getConfig({
     new CopyPlugin({
       patterns: [
         {
-          from:
-            'node_modules/@cliqz/adblocker-electron-preload/dist/preload.cjs.js',
+          from: 'node_modules/@cliqz/adblocker-electron-preload/dist/preload.cjs.js',
           to: 'preload.js',
           transform: async (fileContent, path) => {
             return (
@@ -43,11 +42,17 @@ const mainConfig = getConfig({
     }),
     new ThreadsPlugin({
       target: 'electron-main',
-    })
+    }),
   ],
   externals: {
-    "better-sqlite3": "commonjs better-sqlite3",
-  }
+    'better-sqlite3': 'commonjs better-sqlite3',
+  },
+  resolve: {
+    alias: {
+      sharp$: false,
+      'onnxruntime-node$': false,
+    },
+  },
 });
 
 const preloadConfig = getConfig({
@@ -65,7 +70,7 @@ const preloadConfig = getConfig({
   plugins: [
     new ThreadsPlugin({
       target: 'web',
-    })
+    }),
   ],
 });
 

@@ -116,7 +116,7 @@ export class NetworkStore {
           responseBody: rawBody,
           contentHash,
         };
-        console.log("Updated log with response:", updatedEntry);
+        // console.log("Updated log with response:", updatedEntry);
         await entry.update({ $set: updatedEntry });
       }
     } catch (error) {
