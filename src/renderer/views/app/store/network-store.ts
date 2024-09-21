@@ -1,11 +1,48 @@
 import { CrawlsCollection, createDatabase, DomainStatusCollection, NetworkCollection } from './rxdb-setup';
-import { addRxPlugin, createRxDatabase, RxDatabase } from 'rxdb';
+import { addRxPlugin, createRxDatabase, RxDatabase, RxCollection, RxJsonSchema } from 'rxdb';
 import { RxDBUpdatePlugin } from 'rxdb/plugins/update';
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
 import { pipeline } from "@xenova/transformers";
-import { euclideanDistance } from 'rxdb/plugins/vector';
-import { sortByObjectNumberProperty } from 'rxdb/plugins/core';
 import { sha256 } from 'hash-wasm';
+
+/**
+ * Utility function to calculate the Euclidean distance between two vectors.
+ * @param a First vector.
+ * @param b Second vector.
+ * @returns The Euclidean distance.
+ */
+function euclideanDistance(a: number[], b: number[]): number {
+  if (a.length !== b.length) {
+    throw new Error('Vectors must be of the same length');
+  }
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) {
+    const diff = a[i] - b[i];
+    sum += diff * diff;
+  }
+  return Math.sqrt(sum);
+}
+
+/**
+ * Utility function to sort an array of objects by a numeric property.
+ * @param prop The property name to sort by.
+ * @returns A comparator function.
+ */
+function sortByObjectNumberProperty(prop: string) {
+  return (a: any, b: any) => {
+    return a[prop] - b[prop];
+  };
+}
+
+/**
+ * Utility function to convert a number to a fixed-length string with leading zeros.
+ * @param num The number to convert.
+ * @param length The desired string length.
+ * @returns The fixed-length string.
+ */
+function indexNrToString(num: number, length: number = 10): string {
+  return num.toFixed(6).padStart(length, '0');
+}
 
 addRxPlugin(RxDBUpdatePlugin);
 
@@ -31,15 +68,47 @@ export interface StoredNetworkData {
   embedding?: number[]; // Added embedding field
 }
 
-/**
- * Interface for embedding documents.
- */
-interface EmbeddingDocument {
+// Define the EmbeddingDocument type
+type EmbeddingDocument = {
   id: string;
   baseUrl: string;
   path: string;
-  embedding: number[];
+  embedding?: number[];
+  idx0: string;
+  idx1: string;
+  idx2: string;
+  idx3: string;
+  idx4: string;
 }
+
+// Define the EmbeddingsCollection type
+type EmbeddingsCollection = RxCollection<EmbeddingDocument>;
+
+// Define the schema for the embeddings collection
+const embeddingsSchema: RxJsonSchema<EmbeddingDocument> = {
+  version: 0,
+  primaryKey: 'id',
+  type: 'object',
+  properties: {
+    id: {
+      type: 'string',
+      maxLength: 100
+    },
+    baseUrl: { type: 'string' },
+    path: { type: 'string' },
+    embedding: {
+      type: 'array',
+      items: { type: 'number' }
+    },
+    idx0: { type: 'string', maxLength: 10 },
+    idx1: { type: 'string', maxLength: 10 },
+    idx2: { type: 'string', maxLength: 10 },
+    idx3: { type: 'string', maxLength: 10 },
+    idx4: { type: 'string', maxLength: 10 }
+  },
+  required: ['id', 'baseUrl', 'path', 'idx0', 'idx1', 'idx2', 'idx3', 'idx4'],
+  indexes: ['idx0', 'idx1', 'idx2', 'idx3', 'idx4']
+};
 
 /**
  * Class representing the network store with search capabilities.
@@ -50,10 +119,12 @@ export class NetworkStore {
     crawls: CrawlsCollection,
     network: NetworkCollection,
     domainStatus: DomainStatusCollection,
-    embeddings: { schema: any }
+    embeddings: EmbeddingsCollection
   }>;
   private readonly MAX_ITEMS = 200;
   private pipePromise: Promise<any>;
+  private sampleVectors: number[][] = [
+  ];
 
   private constructor() {
     this.pipePromise = pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
@@ -83,6 +154,14 @@ export class NetworkStore {
       crawls: {
         schema: {
           // Define your crawls schema here
+          version: 0,
+          primaryKey: 'id',
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            // Add other properties as needed
+          },
+          required: ['id']
         }
       },
       network: {
@@ -106,7 +185,7 @@ export class NetworkStore {
             contentHash: { type: 'string' },
             timestamp: { type: 'number' },
             parentUrlHash: { type: 'string' },
-            embedding: { type: 'array', items: { type: 'number' }, optional: true }
+            embedding: { type: 'array', items: { type: 'number' } }
           },
           required: ['requestId', 'urlHash', 'baseUrl', 'path', 'method', 'requestHeaders', 'responseStatus', 'responseHeaders', 'contentHash', 'timestamp']
         }
@@ -114,23 +193,29 @@ export class NetworkStore {
       domainStatus: {
         schema: {
           // Define your domainStatus schema here
-        }
-      },
-      embeddings: {
-        schema: {
           version: 0,
           primaryKey: 'id',
           type: 'object',
           properties: {
             id: { type: 'string' },
-            baseUrl: { type: 'string' },
-            path: { type: 'string' },
-            embedding: { type: 'array', items: { type: 'number' } }
+            // Add other properties as needed
           },
-          required: ['id', 'baseUrl', 'path', 'embedding']
+          required: ['id']
         }
+      },
+      embeddings: {
+        schema: embeddingsSchema
       }
     });
+
+    // Initialize or load sample vectors
+    // You can load these from a file or define them statically
+    // Example:
+    // this.sampleVectors = [
+    //   [0.1, 0.2, 0.3, ..., 0.768],
+    //   [0.4, 0.5, 0.6, ..., 0.123],
+    //   ...
+    // ];
   }
 
   /**
@@ -145,7 +230,7 @@ export class NetworkStore {
    * Generates and stores embeddings for baseUrl, requestBody, and responseBody.
    * Returns the stored entry for mapping purposes.
    */
-  public async addRequestToLog(details: { requestId: string; url: string; method: string; headers: Record<string, string>; body?: string; initiator: any }): Promise<StoredNetworkData> {
+  public async addRequestToLog(details: { requestId: string; url: string; method: string; headers: Record<string, string>; body?: string; initiator: any }): Promise<StoredNetworkData | null> {
     if (details.method.toUpperCase() !== 'GET') return null; // Focus only on GET requests
 
     const urlHash = await this.hashString(details.url);
@@ -190,13 +275,19 @@ export class NetworkStore {
 
       await this.db.network.insert(newEntry);
 
-      // Store embedding separately for search
+      // Store embedding separately for search with indexed fields
       if (embedding) {
+        const indexValues = this.calculateIndexValues(embedding);
         const embeddingDoc: EmbeddingDocument = {
           id: newEntry.requestId,
           baseUrl: newEntry.baseUrl,
           path: newEntry.path,
-          embedding
+          embedding,
+          idx0: indexNrToString(indexValues[0]),
+          idx1: indexNrToString(indexValues[1]),
+          idx2: indexNrToString(indexValues[2]),
+          idx3: indexNrToString(indexValues[3]),
+          idx4: indexNrToString(indexValues[4])
         };
         await this.db.embeddings.insert(embeddingDoc);
       }
@@ -231,13 +322,19 @@ export class NetworkStore {
         updatedEntryData.embedding = newEmbedding;
         await entry.update({ $set: { embedding: newEmbedding } });
 
-        // Update embedding document
+        // Update embedding document with indexed fields
         if (newEmbedding) {
+          const indexValues = this.calculateIndexValues(newEmbedding);
           const embeddingDoc: EmbeddingDocument = {
             id: updatedEntryData.requestId,
             baseUrl: updatedEntryData.baseUrl,
             path: updatedEntryData.path,
-            embedding: newEmbedding
+            embedding: newEmbedding,
+            idx0: indexNrToString(indexValues[0]),
+            idx1: indexNrToString(indexValues[1]),
+            idx2: indexNrToString(indexValues[2]),
+            idx3: indexNrToString(indexValues[3]),
+            idx4: indexNrToString(indexValues[4])
           };
           const existingEmbedding = await this.db.embeddings.findOne({ selector: { id: details.requestId } }).exec();
           if (existingEmbedding) {
@@ -277,6 +374,20 @@ export class NetworkStore {
   }
 
   /**
+   * Calculates index values based on distance to sample vectors.
+   * @param embedding The embedding vector.
+   * @returns An array of distance values to each sample vector.
+   */
+  private calculateIndexValues(embedding: number[]): number[] {
+    const distances: number[] = [];
+    for (let i = 0; i < this.sampleVectors.length; i++) {
+      const distance = euclideanDistance(this.sampleVectors[i], embedding);
+      distances.push(distance);
+    }
+    return distances;
+  }
+
+  /**
    * Removes the oldest entries to maintain the maximum limit.
    */
   private async removeOldestEntries(count: number): Promise<void> {
@@ -288,7 +399,10 @@ export class NetworkStore {
     for (const entry of oldestEntries) {
       await entry.remove();
       // Also remove from embeddings collection
-      await this.db.embeddings.findOne({ selector: { id: entry.requestId } }).exec()?.remove();
+      const embeddingDoc = await this.db.embeddings.findOne({ selector: { id: entry.requestId } }).exec();
+      if (embeddingDoc) {
+        await embeddingDoc.remove();
+      }
     }
   }
 
@@ -336,7 +450,7 @@ export class NetworkStore {
    * Assumes path parameters are segments that are numeric or UUIDs.
    * Modify this logic based on your API's path parameter patterns.
    */
-  private extractPathParams(path: string): string[] {
+  private extractPathParams(path: string): string[] | undefined {
     const segments = path.split('/').filter(Boolean);
     const params: string[] = [];
 
@@ -462,16 +576,47 @@ export class NetworkStore {
   public async searchTools(query: string, topK: number = 10): Promise<StoredNetworkData[]> {
     try {
       const queryVector = await this.getEmbeddingFromText(query);
-      const candidates = await this.db.embeddings.find().exec();
 
-      const withDistance = candidates.map(doc => ({
-        doc,
-        distance: euclideanDistance(queryVector, doc.embedding)
-      }));
+      // Calculate distances to sample vectors
+      const indexValues = this.calculateIndexValues(queryVector);
 
-      const sorted = withDistance.sort(sortByObjectNumberProperty('distance'));
+      const candidates = new Set<EmbeddingDocument>();
 
-      const topResults = sorted.slice(0, topK).map(item => item.doc.id);
+      // Perform search based on indexed distances (Distance to Samples)
+      for (let i = 0; i < this.sampleVectors.length; i++) {
+        const distanceToIndex = indexValues[i];
+        const range = distanceToIndex * 0.003; // indexDistance
+
+        const lowerBound = indexNrToString(distanceToIndex - range);
+        const upperBound = indexNrToString(distanceToIndex + range);
+
+        const docsInRange = await this.db.embeddings.find({
+          selector: {
+            [`idx${i}`]: {
+              $gt: lowerBound,
+              $lt: upperBound
+            }
+          },
+          sort: [{ [`idx${i}`]: 'asc' }]
+        }).exec();
+
+        docsInRange.forEach(doc => candidates.add(doc));
+      }
+
+      // Calculate exact distances for candidates
+      const docsWithDistance = Array.from(candidates).map(doc => {
+        const distance = euclideanDistance(doc.embedding, queryVector);
+        return {
+          distance,
+          doc
+        };
+      });
+
+      // Sort by distance ascending
+      docsWithDistance.sort((a, b) => a.distance - b.distance);
+
+      // Select topK results
+      const topResults = docsWithDistance.slice(0, topK).map(item => item.doc.id);
 
       const entries = await Promise.all(topResults.map(id => this.get(id)));
       return entries.filter(entry => entry !== null) as StoredNetworkData[];
