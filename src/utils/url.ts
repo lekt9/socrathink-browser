@@ -81,7 +81,7 @@ export const extractQueryParams = (url: string): { strippedUrl: string, params: 
       ? `${baseUrl}?${queryString.split('&').filter(param => !param.startsWith('utm_')).join('&')}`
       : baseUrl;
 
-    console.log({ strippedUrl })
+    // console.log({ strippedUrl })
 
     return { strippedUrl, params };
   }

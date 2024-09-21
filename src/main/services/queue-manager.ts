@@ -89,7 +89,7 @@ export class QueueManager {
                 try {
                     const depth = this.urlDepthMap.get(url) || 0;
                     const authInfo: SerializableAuthInfo = await getAuthInfo(url);
-                    console.log({ pool: this.pool });
+                    // console.log({ pool: this.pool });
                     const result = await this.pool.queue(worker => worker.crawlUrl(authInfo, depth));
                     await this.handleCrawlResult(result);
                 } catch (error) {
@@ -104,7 +104,7 @@ export class QueueManager {
 
     private async handleCrawlResult(result: CrawledData) {
         const { url, rawHtml, content, links, depth } = result;
-        console.log({ rawHtml, content })
+        // console.log({ rawHtml, content })
         if (rawHtml && content) {
             await this.crawlStore.add(url, rawHtml, content, depth);
         }

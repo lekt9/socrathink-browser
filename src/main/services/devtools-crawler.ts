@@ -1,23 +1,29 @@
 import { WebContents } from 'electron';
-import { CrawlStore } from '~/renderer/views/app/store/crawl-store';
+import { NetworkStore, StoredNetworkData } from '~/renderer/views/app/store/network-store';
 import { QueueManager } from './queue-manager';
 import electronDebug from 'electron-debug';
 import { parseMarkdown } from '~/utils/parse';
 import { extractLinks } from '~/utils/hybrid-fetch';
+import { URL } from 'url';
 
 export class DevToolsCrawler {
     private webContents: WebContents;
-    private crawlStore: CrawlStore;
+    private networkStore: NetworkStore;
     private queueManager: QueueManager;
     private isDebuggerAttached: boolean = false;
+    private requestMap: Map<string, StoredNetworkData> = new Map();
 
-    constructor(webContents: WebContents, queueManager: QueueManager, crawlStore: CrawlStore) {
+    constructor(webContents: WebContents, queueManager: QueueManager) {
         this.webContents = webContents;
         this.queueManager = queueManager;
-        this.crawlStore = crawlStore;
         this.attachDebugger();
         electronDebug({ showDevTools: false, devToolsMode: 'right' });
         this.webContents.on('did-navigate', this.handleDidNavigate);
+        this.initializeNetworkStore();
+    }
+
+    private async initializeNetworkStore() {
+        this.networkStore = await NetworkStore.getInstance();
     }
 
     private attachDebugger() {
@@ -36,6 +42,7 @@ export class DevToolsCrawler {
 
     private handleDidNavigate = () => {
         this.detachDebugger();
+        this.attachDebugger();
     }
 
     private detachDebugger() {
@@ -50,55 +57,113 @@ export class DevToolsCrawler {
         }
     }
 
-    private handleDebuggerMessage = (event: Electron.Event, method: string, params: any) => {
-        if (method === 'Network.responseReceived') {
-            this.handleResponse(params.response, params.type, params.requestId);
+    private handleDebuggerMessage = async (event: Electron.Event, method: string, params: any) => {
+        switch (method) {
+            case 'Network.requestWillBeSent':
+                await this.handleRequest(params);
+                break;
+            case 'Network.responseReceived':
+                await this.handleResponse(params);
+                break;
+            case 'Network.loadingFinished':
+                await this.handleLoadingFinished(params);
+                break;
         }
     }
 
-    private async handleResponse(response: any, resourceType: string, requestId: string) {
-        try {
-            const { url, mimeType, status } = response;
+    private async handleRequest(params: any) {
+        const { requestId, request, initiator } = params;
+        const { url, method, headers, postData } = request;
 
-            // Skip non-HTML and non-JSON responses
-            if (!mimeType || (!mimeType.includes('text/html') && !mimeType.includes('application/json'))) {
-                return;
-            }
+        // Add request to NetworkStore and retrieve the stored entry
+        const storedEntry = await this.networkStore.addRequestToLog({
+            requestId,
+            url,
+            method,
+            headers,
+            body: postData,
+            initiator
+        });
 
-            // Skip non-document resources (like images, stylesheets, etc.)
-            if (resourceType !== 'Document' && resourceType !== 'XHR') {
-                return;
-            }
+        if (storedEntry) {
+            // Map the requestId to the stored entry
+            this.requestMap.set(requestId, storedEntry);
+        } else {
+            console.warn(`Failed to store request with ID: ${requestId}`);
+        }
+    }
 
-            // Get the response body using the requestId
-            const { body, base64Encoded } = await this.webContents.debugger.sendCommand('Network.getResponseBody', { requestId: requestId });
-            // Decode the body if it's base64 encoded
-            const rawHtml = base64Encoded ? Buffer.from(body, 'base64').toString('utf-8') : body;
+    private async handleResponse(params: any) {
+        const { requestId, response } = params;
+        const request = this.requestMap.get(requestId);
 
-            let processedContent;
+        if (request) {
+            const { status, headers } = response;
+            request.responseStatus = status;
+            request.responseHeaders = headers;
+            // Update the entry in the database
+            await this.networkStore.updateLogWithResponse({
+                requestId: request.requestId,
+                status,
+                headers,
+                body: undefined // Body will be updated in loadingFinished
+            });
+        } else {
+            console.warn(`No matching request found for response with ID: ${requestId}`);
+        }
+    }
+
+    private async handleLoadingFinished(params: any) {
+        const { requestId } = params;
+        const request = this.requestMap.get(requestId);
+
+        if (request && request.responseStatus !== 0) {
             try {
-                JSON.parse(rawHtml);
-                processedContent = JSON.stringify(rawHtml);
-                const links = extractLinks(processedContent, url);
-                for (const link of links) {
-                    this.queueManager.enqueue(link, 1);
-                }
-            } catch {
-                const links = extractLinks(rawHtml, url);
-                processedContent = parseMarkdown(rawHtml);
-                for (const link of links) {
-                    this.queueManager.enqueue(link, 1);
-                }
+                const { body, base64Encoded } = await this.webContents.debugger.sendCommand('Network.getResponseBody', { requestId });
+                const rawBody = base64Encoded ? Buffer.from(body, 'base64').toString('utf-8') : body;
+
+                request.responseBody = rawBody;
+                request.contentHash = await this.networkStore.hashString(rawBody);
+                // Update the entry in the database with the response body
+                await this.networkStore.updateLogWithResponse({
+                    requestId: request.requestId,
+                    status: request.responseStatus,
+                    headers: request.responseHeaders,
+                    body: rawBody
+                });
+
+                this.processResponseContent(request.baseUrl + request.path, rawBody, request.responseHeaders['content-type']);
+            } catch (error) {
+                console.error('Error handling loading finished:', error);
+            } finally {
+                // Remove the request from the map as it's fully processed
+                this.requestMap.delete(requestId);
+            }
+        } else {
+            console.warn(`No valid request found for loading finished with ID: ${requestId}`);
+        }
+    }
+
+    private async processResponseContent(url: string, rawBody: string, mimeType: string) {
+        if (!mimeType || (!mimeType.includes('text/html') && !mimeType.includes('application/json'))) {
+            return;
+        }
+
+        let processedContent = rawBody;
+        try {
+            if (mimeType.includes('application/json')) {
+                JSON.parse(rawBody);
+                processedContent = rawBody; // Corrected: stringified JSON should already be a string
+            } else {
+                processedContent = parseMarkdown(rawBody);
             }
 
-            if (status >= 200 && status < 300 && processedContent.length > 100) {
-                // Add the content to the crawl store
-                if (await this.crawlStore.add(url, rawHtml, processedContent, 0)) {
-                    console.log("Successfully added to CrawlStore");
-                }
+            const links = extractLinks(processedContent, url);
+            for (const link of links) {
+                this.queueManager.enqueue(link, 1);
             }
         } catch (error) {
-            console.error('Error handling response:', error);
+            console.error('Error processing response content:', error);
         }
     }
 }

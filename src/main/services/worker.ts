@@ -71,11 +71,11 @@ const crawlUrl = async (authInfo: SerializableAuthInfo, depth: number) => {
             method: 'GET',
             headers: headers,
         });
-        console.log({ links })
+        // console.log({ links })
         clearTimeout(timeoutId);
 
         if (content && content.trim().length === 0) {
-            console.log(`No useful content found for URL: ${url}`);
+            // console.log(`No useful content found for URL: ${url}`);
             return { url, rawHtml: '', content: '', links: [], completed: false };
         } else {
             return {

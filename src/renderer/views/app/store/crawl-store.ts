@@ -64,7 +64,7 @@ export class CrawlStore {
 
     public async add(url: string, rawHtml: string, content: string, depth: number, jsonResponse?: object): Promise<boolean> {
         if (!isContentUseful(content)) return false;
-        console.log("content useful", content);
+        // console.log("content useful", content);
         const domain = this.getDomainFromUrl(url);
         if (!domain) return false;
 
@@ -92,11 +92,11 @@ export class CrawlStore {
 
             await this.db.crawls.insert(newEntry);
 
-            console.log("Stored new entry", newEntry);
+            // console.log("Stored new entry", newEntry);
 
             return true;
         } catch (error) {
-            console.error("Error adding entry:", error);
+            // console.error("Error adding entry:", error);
             return false;
         }
     }
