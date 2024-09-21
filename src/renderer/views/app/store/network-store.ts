@@ -1,10 +1,17 @@
 import { CrawlsCollection, createDatabase, DomainStatusCollection, NetworkCollection } from './rxdb-setup';
-import { addRxPlugin, RxDatabase } from 'rxdb';
+import { addRxPlugin, createRxDatabase, RxDatabase } from 'rxdb';
 import { RxDBUpdatePlugin } from 'rxdb/plugins/update';
+import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
+import { pipeline } from "@xenova/transformers";
+import { euclideanDistance } from 'rxdb/plugins/vector';
+import { sortByObjectNumberProperty } from 'rxdb/plugins/core';
 import { sha256 } from 'hash-wasm';
 
 addRxPlugin(RxDBUpdatePlugin);
 
+/**
+ * Interface for storing network data.
+ */
 export interface StoredNetworkData {
   requestId: string;
   urlHash: string;
@@ -21,19 +28,40 @@ export interface StoredNetworkData {
   contentHash: string;
   timestamp: number;
   parentUrlHash?: string;
+  embedding?: number[]; // Added embedding field
 }
 
+/**
+ * Interface for embedding documents.
+ */
+interface EmbeddingDocument {
+  id: string;
+  baseUrl: string;
+  path: string;
+  embedding: number[];
+}
+
+/**
+ * Class representing the network store with search capabilities.
+ */
 export class NetworkStore {
   private static instance: NetworkStore;
   private db: RxDatabase<{
     crawls: CrawlsCollection,
     network: NetworkCollection,
-    domainStatus: DomainStatusCollection
+    domainStatus: DomainStatusCollection,
+    embeddings: { schema: any }
   }>;
   private readonly MAX_ITEMS = 200;
+  private pipePromise: Promise<any>;
 
-  private constructor() { }
+  private constructor() {
+    this.pipePromise = pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+  }
 
+  /**
+   * Retrieves the singleton instance of NetworkStore.
+   */
   public static async getInstance(): Promise<NetworkStore> {
     if (!NetworkStore.instance) {
       NetworkStore.instance = new NetworkStore();
@@ -42,16 +70,79 @@ export class NetworkStore {
     return NetworkStore.instance;
   }
 
+  /**
+   * Initializes the RxDB database and collections.
+   */
   private async initialize(): Promise<void> {
-    this.db = await createDatabase();
+    this.db = await createRxDatabase({
+      name: 'mydatabase',
+      storage: getRxStorageDexie()
+    });
+
+    await this.db.addCollections({
+      crawls: {
+        schema: {
+          // Define your crawls schema here
+        }
+      },
+      network: {
+        schema: {
+          version: 0,
+          primaryKey: 'requestId',
+          type: 'object',
+          properties: {
+            requestId: { type: 'string' },
+            urlHash: { type: 'string' },
+            baseUrl: { type: 'string' },
+            path: { type: 'string' },
+            queryParams: { type: 'object' },
+            pathParams: { type: 'array', items: { type: 'string' } },
+            method: { type: 'string' },
+            requestHeaders: { type: 'object' },
+            requestBody: { type: 'string' },
+            responseStatus: { type: 'number' },
+            responseHeaders: { type: 'object' },
+            responseBody: { type: 'string' },
+            contentHash: { type: 'string' },
+            timestamp: { type: 'number' },
+            parentUrlHash: { type: 'string' },
+            embedding: { type: 'array', items: { type: 'number' }, optional: true }
+          },
+          required: ['requestId', 'urlHash', 'baseUrl', 'path', 'method', 'requestHeaders', 'responseStatus', 'responseHeaders', 'contentHash', 'timestamp']
+        }
+      },
+      domainStatus: {
+        schema: {
+          // Define your domainStatus schema here
+        }
+      },
+      embeddings: {
+        schema: {
+          version: 0,
+          primaryKey: 'id',
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            baseUrl: { type: 'string' },
+            path: { type: 'string' },
+            embedding: { type: 'array', items: { type: 'number' } }
+          },
+          required: ['id', 'baseUrl', 'path', 'embedding']
+        }
+      }
+    });
   }
 
+  /**
+   * Hashes a given string using SHA-256.
+   */
   async hashString(str: string): Promise<string> {
     return await sha256(str);
   }
 
   /**
    * Adds a GET request to the network log with parsed path and query parameters.
+   * Generates and stores embeddings for baseUrl, requestBody, and responseBody.
    * Returns the stored entry for mapping purposes.
    */
   public async addRequestToLog(details: { requestId: string; url: string; method: string; headers: Record<string, string>; body?: string; initiator: any }): Promise<StoredNetworkData> {
@@ -66,7 +157,7 @@ export class NetworkStore {
       queryParams[key] = value;
     });
 
-    // Extract path parameters (e.g., /api/stocks/123 -> ["id"])
+    // Extract path parameters (e.g., /api/stocks/123 -> ["param3"])
     const pathParams = this.extractPathParams(path);
 
     const newEntry: StoredNetworkData = {
@@ -93,7 +184,23 @@ export class NetworkStore {
         await this.removeOldestEntries(1);
       }
 
+      // Generate embedding for baseUrl and requestBody if available
+      const embedding = await this.generateEmbedding(newEntry);
+      newEntry.embedding = embedding;
+
       await this.db.network.insert(newEntry);
+
+      // Store embedding separately for search
+      if (embedding) {
+        const embeddingDoc: EmbeddingDocument = {
+          id: newEntry.requestId,
+          baseUrl: newEntry.baseUrl,
+          path: newEntry.path,
+          embedding
+        };
+        await this.db.embeddings.insert(embeddingDoc);
+      }
+
       return newEntry;
     } catch (error) {
       console.error('Error adding network request to log:', error);
@@ -102,7 +209,7 @@ export class NetworkStore {
   }
 
   /**
-   * Updates a network log entry with response details.
+   * Updates a network log entry with response details and regenerates embedding.
    */
   public async updateLogWithResponse(details: { requestId: string; status: number; headers: Record<string, string>; body?: string }): Promise<void> {
     try {
@@ -116,11 +223,56 @@ export class NetworkStore {
           responseBody: rawBody,
           contentHash,
         };
-        // console.log("Updated log with response:", updatedEntry);
         await entry.update({ $set: updatedEntry });
+
+        // Update embedding with responseBody
+        const updatedEntryData = entry.toJSON() as StoredNetworkData;
+        const newEmbedding = await this.generateEmbedding(updatedEntryData);
+        updatedEntryData.embedding = newEmbedding;
+        await entry.update({ $set: { embedding: newEmbedding } });
+
+        // Update embedding document
+        if (newEmbedding) {
+          const embeddingDoc: EmbeddingDocument = {
+            id: updatedEntryData.requestId,
+            baseUrl: updatedEntryData.baseUrl,
+            path: updatedEntryData.path,
+            embedding: newEmbedding
+          };
+          const existingEmbedding = await this.db.embeddings.findOne({ selector: { id: details.requestId } }).exec();
+          if (existingEmbedding) {
+            await existingEmbedding.update({ $set: embeddingDoc });
+          } else {
+            await this.db.embeddings.insert(embeddingDoc);
+          }
+        }
       }
     } catch (error) {
       console.error('Error updating network log with response:', error);
+    }
+  }
+
+  /**
+   * Generates embedding for baseUrl, requestBody, and responseBody.
+   */
+  private async generateEmbedding(entry: StoredNetworkData): Promise<number[] | null> {
+    try {
+      const pipe = await this.pipePromise;
+      let textToEmbed = entry.baseUrl;
+      if (entry.requestBody) {
+        textToEmbed += ` ${entry.requestBody}`;
+      }
+      if (entry.responseBody) {
+        textToEmbed += ` ${entry.responseBody}`;
+      }
+      const output = await pipe(textToEmbed, {
+        pooling: "mean",
+        normalize: true,
+      });
+      return Array.from(output.data);
+    } catch (error) {
+      console.error('Error generating embedding:', error);
+      return null;
     }
   }
 
@@ -135,14 +287,17 @@ export class NetworkStore {
 
     for (const entry of oldestEntries) {
       await entry.remove();
+      // Also remove from embeddings collection
+      await this.db.embeddings.findOne({ selector: { id: entry.requestId } }).exec()?.remove();
     }
   }
 
   /**
-   * Clears all network logs.
+   * Clears all network logs and embeddings.
    */
   public async clearLogs(): Promise<void> {
     await this.db.network.remove();
+    await this.db.embeddings.remove();
   }
 
   /**
@@ -296,6 +451,53 @@ export class NetworkStore {
     }
 
     return schema;
+  }
+
+  /**
+   * Search tool to retrieve multiple baseUrls and paths based on embeddings.
+   * @param query The user input query string.
+   * @param topK The number of top results to retrieve.
+   * @returns An array of matching network entries.
+   */
+  public async searchTools(query: string, topK: number = 10): Promise<StoredNetworkData[]> {
+    try {
+      const queryVector = await this.getEmbeddingFromText(query);
+      const candidates = await this.db.embeddings.find().exec();
+
+      const withDistance = candidates.map(doc => ({
+        doc,
+        distance: euclideanDistance(queryVector, doc.embedding)
+      }));
+
+      const sorted = withDistance.sort(sortByObjectNumberProperty('distance'));
+
+      const topResults = sorted.slice(0, topK).map(item => item.doc.id);
+
+      const entries = await Promise.all(topResults.map(id => this.get(id)));
+      return entries.filter(entry => entry !== null) as StoredNetworkData[];
+    } catch (error) {
+      console.error('Error during search:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Generates embedding from text using the configured pipeline.
+   * @param text The input text to generate embedding for.
+   * @returns An array of numbers representing the embedding.
+   */
+  private async getEmbeddingFromText(text: string): Promise<number[]> {
+    try {
+      const pipe = await this.pipePromise;
+      const output = await pipe(text, {
+        pooling: "mean",
+        normalize: true,
+      });
+      return Array.from(output.data);
+    } catch (error) {
+      console.error('Error generating embedding from text:', error);
+      return [];
+    }
   }
 }
 

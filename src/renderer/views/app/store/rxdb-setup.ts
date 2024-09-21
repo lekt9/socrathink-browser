@@ -1,16 +1,18 @@
 import { createRxDatabase, RxDatabase, RxCollection, RxJsonSchema, RxCollectionCreator } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { StoredCrawlData } from './crawl-store';
-import { StoredNetworkData } from './network-store';
+import { StoredNetworkData, VectorDocType } from './network-store';
 
 export type CrawlsCollection = RxCollection<StoredCrawlData>;
 export type NetworkCollection = RxCollection<StoredNetworkData>;
 export type DomainStatusCollection = RxCollection<DomainStatusDocType>;
+export type VectorCollection = RxCollection<VectorDocType>;
 
 export type MyDatabaseCollections = {
     crawls: CrawlsCollection;
     network: NetworkCollection;
     domainStatus: DomainStatusCollection;
+    vector: VectorCollection;
 };
 
 const crawlSchema: RxJsonSchema<StoredCrawlData> = {
@@ -128,6 +130,32 @@ const domainStatusSchema: RxJsonSchema<DomainStatusDocType> = {
     required: ['domain', 'isCompleted']
 };
 
+const vectorSchema: RxJsonSchema<VectorDocType> = {
+    version: 0,
+    type: 'object',
+    primaryKey: 'requestId',
+    properties: {
+        requestId: {
+            type: 'string',
+            maxLength: 255
+        },
+        embedding: {
+            type: 'array',
+            items: { type: 'number' }
+        },
+        timestamp: {
+            type: 'integer',
+            minimum: 0
+        }
+    },
+    required: ['requestId', 'embedding', 'timestamp']
+};
+
+export interface DomainStatusDocType {
+    domain: string;
+    isCompleted: boolean;
+}
+
 export async function createDatabase(): Promise<RxDatabase<MyDatabaseCollections>> {
     const db = await createRxDatabase<MyDatabaseCollections>({
         name: 'crawldb',
@@ -143,15 +171,13 @@ export async function createDatabase(): Promise<RxDatabase<MyDatabaseCollections
         },
         domainStatus: {
             schema: domainStatusSchema
+        },
+        vector: {
+            schema: vectorSchema
         }
     };
 
     await db.addCollections(collections);
 
     return db;
-}
-
-export interface DomainStatusDocType {
-    domain: string;
-    isCompleted: boolean;
 }
