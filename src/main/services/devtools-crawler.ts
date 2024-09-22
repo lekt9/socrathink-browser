@@ -70,9 +70,9 @@ export class DevToolsCrawler {
     private async handleRequest(params: any) {
         const { requestId, request, initiator } = params;
         const { url, method, headers, postData } = request;
-        const networkStore = await NetworkStore.getInstance();
+
         // Add request to NetworkStore and retrieve the stored entry
-        const storedEntry = await networkStore.addRequestToLog({
+        const storedEntry = await this.networkStore.addRequestToLog({
             requestId,
             url,
             method,
@@ -92,14 +92,13 @@ export class DevToolsCrawler {
     private async handleResponse(params: any) {
         const { requestId, response } = params;
         const request = this.requestMap.get(requestId);
-        const networkStore = await NetworkStore.getInstance();
 
         if (request) {
             const { status, headers } = response;
             request.responseStatus = status;
             request.responseHeaders = headers;
             // Update the entry in the database
-            await networkStore.updateLogWithResponse({
+            await this.networkStore.updateLogWithResponse({
                 requestId: request.requestId,
                 status,
                 headers,
@@ -118,12 +117,11 @@ export class DevToolsCrawler {
             try {
                 const { body, base64Encoded } = await this.webContents.debugger.sendCommand('Network.getResponseBody', { requestId });
                 const rawBody = base64Encoded ? Buffer.from(body, 'base64').toString('utf-8') : body;
-                const networkStore = await NetworkStore.getInstance();
 
                 request.responseBody = rawBody;
-                request.contentHash = await networkStore.hashString(rawBody);
+                request.contentHash = await this.networkStore.hashString(rawBody);
                 // Update the entry in the database with the response body
-                await networkStore.updateLogWithResponse({
+                await this.networkStore.updateLogWithResponse({
                     requestId: request.requestId,
                     status: request.responseStatus,
                     headers: request.responseHeaders,

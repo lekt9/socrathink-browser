@@ -115,34 +115,31 @@ const embeddingsSchema: RxJsonSchema<EmbeddingDocument> = {
 export class NetworkStore {
   private static instance: NetworkStore;
   private db: RxDatabase<{
-    crawls: CrawlsCollection,
     network: NetworkCollection,
     embeddings: EmbeddingsCollection
   }>;
-  private readonly MAX_ITEMS = 200;
+  private readonly MAX_ITEMS = 2000;
   private sampleVectors: number[][] = [
   ];
 
-  private constructor() { }
+  private constructor(db: RxDatabase<{
+    network: NetworkCollection,
+    embeddings: EmbeddingsCollection
+  }>) {
+    this.db = db
+  }
 
   /**
    * Retrieves the singleton instance of NetworkStore.
    */
   public static async getInstance(): Promise<NetworkStore> {
     if (!NetworkStore.instance) {
-      NetworkStore.instance = new NetworkStore();
-      await NetworkStore.instance.initialize();
+      const db = await createDatabase()
+      NetworkStore.instance = new NetworkStore(db);
     }
     return NetworkStore.instance;
   }
 
-  /**
-   * Initializes the RxDB database and collections.
-   */
-  private async initialize(): Promise<void> {
-    this.db = await createDatabase();
-
-  }
 
   /**
    * Hashes a given string using SHA-256.
@@ -190,14 +187,16 @@ export class NetworkStore {
     };
 
     try {
-      const currentCount = await this.size();
-      if (currentCount >= this.MAX_ITEMS) {
-        await this.removeOldestEntries(1);
-      }
+      // const currentCount = await this.size();
+      // if (currentCount >= this.MAX_ITEMS) {
+      //   await this.removeOldestEntries(1);
+      // }
+      console.log(newEntry)
 
       // Generate embedding for baseUrl and requestBody if available
       const embedding = await this.generateEmbedding(newEntry);
       newEntry.embedding = embedding;
+      console.log(embedding)
 
       await this.db.network.insert(newEntry);
 
@@ -280,7 +279,11 @@ export class NetworkStore {
    */
   private async generateEmbedding(entry: StoredNetworkData): Promise<number[] | null> {
     try {
-      return await window.embed.run(entry.baseUrl + entry.path + entry.requestBody + entry.responseBody);
+      console.log(entry.baseUrl + entry.path + entry.requestBody + entry.responseBody)
+      // if (window && window.embed) {
+      //   return await window.embed.run(entry.baseUrl + entry.path + entry.requestBody + entry.responseBody)
+      // }
+      return null
     } catch (error) {
       console.error('Error generating embedding:', error);
       return null;
@@ -489,7 +492,7 @@ export class NetworkStore {
    */
   public async searchTools(query: string, topK: number = 10): Promise<StoredNetworkData[]> {
     try {
-      const queryVector = await this.getEmbeddingFromText(query);
+      const queryVector = await window.embed.run(query);
 
       // Calculate distances to sample vectors
       const indexValues = this.calculateIndexValues(queryVector);

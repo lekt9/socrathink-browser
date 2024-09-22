@@ -15,7 +15,9 @@ export class ContextService {
     }
 
     private setupIpcHandlers() {
-        ipcMain.handle('transformers:run', run);
+        ipcMain.handle('transformers:run', async (event, text: string) => {
+            return run(text);
+        });
         ipcMain.handle('authed-fetch', async (event, url: string, options: AuthFetchOptions = {}) => {
             try {
                 if (url && url.length > 0) {
@@ -65,7 +67,7 @@ export class ContextService {
         ipcMain.handle('search-tools', async (event, query: string, topK: number = 10) => {
             try {
                 const networkStore = await NetworkStore;
-                const results = await networkStore.searchTools(query, topK);
+                const results = await (await networkStore.getInstance()).searchTools(query, topK);
                 return {
                     ok: true,
                     status: 200,

@@ -151,9 +151,12 @@ export class View {
       this.emitEvent('did-navigate', url);
       await this.addHistoryItem(url);
       await this.updateURL(url);
-      this.devToolsCrawler = new DevToolsCrawler(this.networkStore, this.webContents, this.queueManager)
 
     });
+
+    NetworkStore.getInstance().then(networkStore => {
+      this.devToolsCrawler = new DevToolsCrawler(networkStore, this.webContents, this.queueManager)
+    })
 
     this.webContents.addListener(
       'did-navigate-in-page',

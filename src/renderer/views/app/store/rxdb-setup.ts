@@ -2,9 +2,7 @@ import { createRxDatabase, RxDatabase, RxCollection, RxJsonSchema, RxCollectionC
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
 import { StoredCrawlData } from './crawl-store';
 import { StoredNetworkData } from './network-store';
-// ...or use the LokiJS RxStorage with the indexeddb adapter.
-import { getRxStorageLoki } from 'rxdb/plugins/storage-lokijs';
-const LokiIncrementalIndexedDBAdapter = require('lokijs/src/incremental-indexeddb-adapter');
+import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 export type CrawlsCollection = RxCollection<StoredCrawlData>;
 export type NetworkCollection = RxCollection<StoredNetworkData>;
 export type EmbeddingsCollection = RxCollection<EmbeddingDocument>;
@@ -112,11 +110,10 @@ export interface EmbeddingDocument {
 
 export async function createDatabase(): Promise<RxDatabase<MyDatabaseCollections>> {
     const db = await createRxDatabase<MyDatabaseCollections>({
-        name: 'alBERT-app',
-        storage: getRxStorageLoki({
-            adapter: new LokiIncrementalIndexedDBAdapter()
-        }),
-        ignoreDuplicate: true // this create-call will not throw because you explicitly allow it
+        name: 'albert',
+        storage: getRxStorageMemory(),
+        // storage: getRxStorageDexie(),
+        ignoreDuplicate: true
     });
     const collections: { [key in keyof MyDatabaseCollections]: RxCollectionCreator } = {
         crawls: {

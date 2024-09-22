@@ -1,4 +1,4 @@
-import { createDatabase, CrawlsCollection, DomainStatusCollection } from './rxdb-setup';
+import { createDatabase, CrawlsCollection } from './rxdb-setup';
 import { addRxPlugin, RxDatabase } from 'rxdb';
 import { isContentUseful } from '~/utils/parse';
 import { RxDBUpdatePlugin } from 'rxdb/plugins/update';
@@ -25,10 +25,9 @@ export class CrawlStore {
     private static instance: CrawlStore;
     private db: RxDatabase<{
         crawls: CrawlsCollection;
-        domainStatus: DomainStatusCollection;
     }>;
     private requestCount: number = 0;
-    private readonly MAX_ITEMS = 200;
+    private readonly MAX_ITEMS = 300;
 
     private constructor() { }
 
