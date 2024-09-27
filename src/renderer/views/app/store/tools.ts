@@ -324,6 +324,129 @@ const examplePairs: RequestResponsePair[] = [
     // Additional endpoints can be added here...
 ];
 
+
+/**
+ * Tool Generator Function
+ */
+export function generateToolDefinitions(tools: Tool[]) {
+    const toolDefinitions: { [key: string]: any } = {};
+
+    for (const toolItem of tools) {
+        const { name, pattern, endpoints, queryParamOptions } = toolItem;
+
+        // Extract path parameters from the pattern
+        const pathParams: string[] = [];
+        const pathParts = pattern.split('/').filter(Boolean);
+        for (const part of pathParts) {
+            if (part.startsWith(':')) {
+                pathParams.push(part.substring(1));
+            }
+        }
+
+        // Build JSON Schema for parameters
+        const parameters: any = {
+            type: 'object',
+            properties: {},
+            required: [],
+        };
+
+        // Add path parameters
+        for (const paramName of pathParams) {
+            parameters.properties[paramName] = {
+                type: 'string',
+                description: `The ${paramName} parameter. Examples: ${getPathParamExamples(
+                    endpoints,
+                    paramName
+                ).join(', ')}.`,
+            };
+            parameters.required.push(paramName);
+        }
+
+        // Add query parameters
+        for (const [key, values] of Object.entries(queryParamOptions)) {
+            if (values.length <= 5) {
+                // Use enum
+                parameters.properties[key] = {
+                    type: 'string',
+                    enum: values,
+                    description: `Possible values for ${key}.`,
+                };
+            } else {
+                // Provide examples
+                parameters.properties[key] = {
+                    type: 'string',
+                    description: `The ${key} parameter. Examples: ${values
+                        .slice(0, 3)
+                        .join(', ')}${values.length > 3 ? ', etc.' : ''}.`,
+                };
+            }
+            parameters.required.push(key);
+        }
+
+        // Generate the tool definition with URL reconstruction in execute
+        toolDefinitions[name] = {
+            description: `Tool for handling ${name.replace(/_/g, ' ')} operation.`,
+            parameters: parameters,
+        };
+    }
+
+    return toolDefinitions;
+}
+
+/**
+ * Helper Functions
+ */
+
+// Extract examples for path parameters
+function getPathParamExamples(
+    endpoints: ProcessedEndpointInfo[],
+    paramName: string
+): string[] {
+    const examples = new Set<string>();
+    for (const endpoint of endpoints) {
+        const parsedUrl = new URL(endpoint.url);
+        const pathSegments = parsedUrl.pathname.split('/').filter(Boolean);
+        const patternSegments = endpoint.pathInfo.path.split('/').filter(Boolean);
+        for (let i = 0; i < patternSegments.length; i++) {
+            if (patternSegments[i] === `:${paramName}` && pathSegments[i]) {
+                examples.add(pathSegments[i]);
+            }
+        }
+    }
+    return Array.from(examples).slice(0, 5); // Return up to 5 examples
+}
+
+// Reconstruct the URL from pattern and params
+function reconstructUrl(pattern: string, params: any): string {
+    const baseUrl = 'https://api.example.com';
+
+    let urlPath = pattern;
+
+    // Replace path parameters
+    for (const [key, value] of Object.entries(params)) {
+        urlPath = urlPath.replace(`:${key}`, encodeURIComponent(String(value)));
+    }
+
+    // Extract query parameters (those not in path params)
+    const queryParams: { [key: string]: string } = {};
+    for (const [key, value] of Object.entries(params)) {
+        if (!pattern.includes(`:${key}`)) {
+            queryParams[key] = String(value);
+        }
+    }
+
+    // Construct query string
+    const queryString = Object.keys(queryParams)
+        .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(queryParams[key])}`)
+        .join('&');
+
+    const fullUrl = queryString ? `${baseUrl}${urlPath}?${queryString}` : `${baseUrl}${urlPath}`;
+
+    return fullUrl;
+}
+
+
+
 function main() {
     const collector = new EndpointCollector();
 

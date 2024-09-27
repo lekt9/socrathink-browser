@@ -2,7 +2,7 @@ import { CrawlsCollection, createDatabase, NetworkCollection, ToolsCollection } 
 import { RxDatabase, RxJsonSchema } from 'rxdb';
 // Removed Embedding imports and plugins
 import { sha256 } from 'hash-wasm';
-import { EndpointCollector, StorableTool } from './tools'
+import { EndpointCollector, generateToolDefinitions, StorableTool } from './tools'
 // New file for ToolStore if separated, alternatively integrate into network-store.ts
 
 
@@ -49,23 +49,6 @@ export const toolSchema: RxJsonSchema<StorableTool> = {
   },
   required: ['name', 'pattern', 'endpoints', 'queryParamOptions'],
 };
-/**
- * Utility function to calculate the Euclidean distance between two vectors.
- * @param a First vector.
- * @param b Second vector.
- * @returns The Euclidean distance.
- */
-function euclideanDistance(a: number[], b: number[]): number {
-  if (a.length !== b.length) {
-    throw new Error('Vectors must be of the same length');
-  }
-  let sum = 0;
-  for (let i = 0; i < a.length; i++) {
-    const diff = a[i] - b[i];
-    sum += diff * diff;
-  }
-  return Math.sqrt(sum);
-}
 
 /**
  * Utility function to sort an array of objects by a numeric property.
@@ -299,7 +282,7 @@ export class NetworkStore {
   /**
    * Retrieves all tools from the tools collection.
    */
-  public async getTools(): Promise<StorableTool[]> {
+  public async getTools() {
     const pairs = await this.db.network.find({
       selector: {
         responseStatus: { $gt: 0 },
@@ -322,8 +305,8 @@ export class NetworkStore {
       }
     }
 
-    const tools = collector.getTools().filter(tool => tool.endpoints.length > 1);
+    const tools = collector.getTools().filter(tool => tool.endpoints.length > 1)
 
-    return tools;
+    return generateToolDefinitions(tools);
   }
 }
