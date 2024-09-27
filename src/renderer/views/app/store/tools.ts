@@ -1,3 +1,5 @@
+import { createSchema } from 'genson-js';
+
 export interface RequestResponsePair {
     url: string;
     requestPayload: any;
@@ -140,53 +142,15 @@ export class EndpointCollector {
     }
 
     private jsonToSchema(obj: any): any {
-        if (obj === null) {
-            return { type: 'null' };
+        try {
+            return createSchema(obj);
+        } catch (error) {
+            console.log(`Error creating schema for: ${obj}`, error);
+            return {};
         }
-
-        const type = typeof obj;
-
-        if (type === 'number') {
-            return { type: 'number' };
-        }
-
-        if (type === 'string') {
-            return { type: 'string' };
-        }
-
-        if (type === 'boolean') {
-            return { type: 'boolean' };
-        }
-
-        if (Array.isArray(obj)) {
-            if (obj.length === 0) {
-                return { type: 'array', items: {} };
-            }
-            // Assume all items in the array are of the same type
-            const itemSchemas = obj.map(item => this.jsonToSchema(item));
-            const uniqueItemSchemas = this.mergeSchemas(itemSchemas);
-            return { type: 'array', items: uniqueItemSchemas };
-        }
-
-        if (type === 'object') {
-            const properties: { [key: string]: any } = {};
-            const required: string[] = [];
-
-            for (const key of Object.keys(obj)) {
-                properties[key] = this.jsonToSchema(obj[key]);
-                required.push(key);
-            }
-
-            return {
-                type: 'object',
-                properties,
-                required
-            };
-        }
-
-        // Fallback for undefined or unknown types
-        return {};
     }
+
+
 
     private mergeSchemas(schemas: any[]): any {
         if (schemas.length === 0) {

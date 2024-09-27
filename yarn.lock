@@ -7782,6 +7782,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"genson-js@npm:^0.0.8":
+  version: 0.0.8
+  resolution: "genson-js@npm:0.0.8"
+  checksum: 10c0/568e78aab3a5efeb98334e565c7d1aba56aa639379a47b9e8b18816f8ef2c58b0ff72b5e0f87cfd7ff2c64a25bbf96783ee46f8ed0a4e480dcfa0c41ecea768f
+  languageName: node
+  linkType: hard
+
 "gensync@npm:^1.0.0-beta.2":
   version: 1.0.0-beta.2
   resolution: "gensync@npm:1.0.0-beta.2"
@@ -12999,6 +13006,7 @@ __metadata:
     file-type: "npm:17.1.1"
     fork-ts-checker-webpack-plugin: "npm:^7.0.0"
     fuzzysort: "npm:^3.0.2"
+    genson-js: "npm:^0.0.8"
     gpt-tokenizer: "npm:^2.2.1"
     hash-wasm: "npm:^4.11.0"
     hex-to-rgb: "npm:^1.0.1"

@@ -131,6 +131,7 @@
     "electron-debug": "^4.0.0",
     "fast-average-color": "^7.0.1",
     "fuzzysort": "^3.0.2",
+    "genson-js": "^0.0.8",
     "gpt-tokenizer": "^2.2.1",
     "hash-wasm": "^4.11.0",
     "hex-to-rgb": "^1.0.1",
