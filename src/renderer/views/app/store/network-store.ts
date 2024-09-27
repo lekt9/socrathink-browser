@@ -1,8 +1,54 @@
-import { CrawlsCollection, createDatabase, NetworkCollection } from './rxdb-setup';
-import { addRxPlugin, RxDatabase, RxCollection, RxJsonSchema } from 'rxdb';
-import { RxDBUpdatePlugin } from 'rxdb/plugins/update';
+import { CrawlsCollection, createDatabase, NetworkCollection, ToolsCollection } from './rxdb-setup';
+import { RxDatabase, RxJsonSchema } from 'rxdb';
+// Removed Embedding imports and plugins
 import { sha256 } from 'hash-wasm';
+import { EndpointCollector, StorableTool } from './tools'
+// New file for ToolStore if separated, alternatively integrate into network-store.ts
 
+
+export const toolSchema: RxJsonSchema<StorableTool> = {
+  version: 0,
+  type: 'object',
+  primaryKey: 'name',
+  properties: {
+    name: { type: 'string', maxLength: 255 },
+    pattern: { type: 'string', maxLength: 1000 },
+    endpoints: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', maxLength: 2000 },
+          requestPayload: { type: 'object' },
+          responsePayload: { type: 'object' },
+          pathInfo: {
+            type: 'object',
+            properties: {
+              path: { type: 'string', maxLength: 1000 },
+              queryParams: {
+                type: 'object',
+                additionalProperties: {
+                  type: 'string',
+                  enum: ['enum', 'dynamic']
+                }
+              },
+            },
+            required: ['path', 'queryParams'],
+          },
+        },
+        required: ['url', 'requestPayload', 'responsePayload', 'pathInfo'],
+      },
+    },
+    queryParamOptions: {
+      type: 'object',
+      additionalProperties: {
+        type: 'array',
+        items: { type: 'string' },
+      },
+    },
+  },
+  required: ['name', 'pattern', 'endpoints', 'queryParamOptions'],
+};
 /**
  * Utility function to calculate the Euclidean distance between two vectors.
  * @param a First vector.
@@ -42,8 +88,6 @@ function indexNrToString(num: number, length: number = 10): string {
   return num.toFixed(6).padStart(length, '0');
 }
 
-addRxPlugin(RxDBUpdatePlugin);
-
 /**
  * Interface for storing network data.
  */
@@ -51,6 +95,7 @@ export interface StoredNetworkData {
   requestId: string;
   urlHash: string;
   baseUrl: string;
+  url: string;
   path: string;
   queryParams?: Record<string, string>;
   pathParams?: string[];
@@ -63,70 +108,29 @@ export interface StoredNetworkData {
   contentHash: string;
   timestamp: number;
   parentUrlHash?: string;
-  embedding?: number[]; // Added embedding field
 }
-
-// Define the EmbeddingDocument type
-type EmbeddingDocument = {
-  id: string;
-  baseUrl: string;
-  path: string;
-  embedding?: number[];
-  idx0: string;
-  idx1: string;
-  idx2: string;
-  idx3: string;
-  idx4: string;
-}
-
-// Define the EmbeddingsCollection type
-type EmbeddingsCollection = RxCollection<EmbeddingDocument>;
-
-// Define the schema for the embeddings collection
-const embeddingsSchema: RxJsonSchema<EmbeddingDocument> = {
-  version: 0,
-  primaryKey: 'id',
-  type: 'object',
-  properties: {
-    id: {
-      type: 'string',
-      maxLength: 100
-    },
-    baseUrl: { type: 'string' },
-    path: { type: 'string' },
-    embedding: {
-      type: 'array',
-      items: { type: 'number' }
-    },
-    idx0: { type: 'string', maxLength: 10 },
-    idx1: { type: 'string', maxLength: 10 },
-    idx2: { type: 'string', maxLength: 10 },
-    idx3: { type: 'string', maxLength: 10 },
-    idx4: { type: 'string', maxLength: 10 }
-  },
-  required: ['id', 'baseUrl', 'path', 'idx0', 'idx1', 'idx2', 'idx3', 'idx4'],
-  indexes: ['idx0', 'idx1', 'idx2', 'idx3', 'idx4']
-};
-
 
 /**
- * Class representing the network store with search capabilities.
+ * Class representing the network store with tool management capabilities.
  */
 export class NetworkStore {
   private static instance: NetworkStore;
   private db: RxDatabase<{
     network: NetworkCollection,
-    embeddings: EmbeddingsCollection
+    crawls: CrawlsCollection,
+    tools: ToolsCollection,
   }>;
   private readonly MAX_ITEMS = 2000;
   private sampleVectors: number[][] = [
+    // Existing sample vectors if any
   ];
 
   private constructor(db: RxDatabase<{
     network: NetworkCollection,
-    embeddings: EmbeddingsCollection
+    crawls: CrawlsCollection,
+    tools: ToolsCollection,
   }>) {
-    this.db = db
+    this.db = db;
   }
 
   /**
@@ -134,12 +138,11 @@ export class NetworkStore {
    */
   public static async getInstance(): Promise<NetworkStore> {
     if (!NetworkStore.instance) {
-      const db = await createDatabase()
+      const db = await createDatabase();
       NetworkStore.instance = new NetworkStore(db);
     }
     return NetworkStore.instance;
   }
-
 
   /**
    * Hashes a given string using SHA-256.
@@ -150,7 +153,6 @@ export class NetworkStore {
 
   /**
    * Adds a GET request to the network log with parsed path and query parameters.
-   * Generates and stores embeddings for baseUrl, requestBody, and responseBody.
    * Returns the stored entry for mapping purposes.
    */
   public async addRequestToLog(details: { requestId: string; url: string; method: string; headers: Record<string, string>; body?: string; initiator: any }): Promise<StoredNetworkData | null> {
@@ -172,6 +174,7 @@ export class NetworkStore {
       requestId: details.requestId,
       urlHash,
       baseUrl,
+      url: details.url,
       path,
       queryParams: Object.keys(queryParams).length > 0 ? queryParams : undefined,
       pathParams,
@@ -191,31 +194,9 @@ export class NetworkStore {
       // if (currentCount >= this.MAX_ITEMS) {
       //   await this.removeOldestEntries(1);
       // }
-      console.log(newEntry)
-
-      // Generate embedding for baseUrl and requestBody if available
-      const embedding = await this.generateEmbedding(newEntry);
-      newEntry.embedding = embedding;
-      console.log(embedding)
+      console.log(newEntry);
 
       await this.db.network.insert(newEntry);
-
-      // Store embedding separately for search with indexed fields
-      if (embedding) {
-        const indexValues = this.calculateIndexValues(embedding);
-        const embeddingDoc: EmbeddingDocument = {
-          id: newEntry.requestId,
-          baseUrl: newEntry.baseUrl,
-          path: newEntry.path,
-          embedding,
-          idx0: indexNrToString(indexValues[0]),
-          idx1: indexNrToString(indexValues[1]),
-          idx2: indexNrToString(indexValues[2]),
-          idx3: indexNrToString(indexValues[3]),
-          idx4: indexNrToString(indexValues[4])
-        };
-        await this.db.embeddings.insert(embeddingDoc);
-      }
 
       return newEntry;
     } catch (error) {
@@ -225,7 +206,7 @@ export class NetworkStore {
   }
 
   /**
-   * Updates a network log entry with response details and regenerates embedding.
+   * Updates a network log entry with response details.
    */
   public async updateLogWithResponse(details: { requestId: string; status: number; headers: Record<string, string>; body?: string }): Promise<void> {
     try {
@@ -240,34 +221,6 @@ export class NetworkStore {
           contentHash,
         };
         await entry.update({ $set: updatedEntry });
-
-        // Update embedding with responseBody
-        const updatedEntryData = entry.toJSON() as StoredNetworkData;
-        const newEmbedding = await this.generateEmbedding(updatedEntryData);
-        updatedEntryData.embedding = newEmbedding;
-        await entry.update({ $set: { embedding: newEmbedding } });
-
-        // Update embedding document with indexed fields
-        if (newEmbedding) {
-          const indexValues = this.calculateIndexValues(newEmbedding);
-          const embeddingDoc: EmbeddingDocument = {
-            id: updatedEntryData.requestId,
-            baseUrl: updatedEntryData.baseUrl,
-            path: updatedEntryData.path,
-            embedding: newEmbedding,
-            idx0: indexNrToString(indexValues[0]),
-            idx1: indexNrToString(indexValues[1]),
-            idx2: indexNrToString(indexValues[2]),
-            idx3: indexNrToString(indexValues[3]),
-            idx4: indexNrToString(indexValues[4])
-          };
-          const existingEmbedding = await this.db.embeddings.findOne({ selector: { id: details.requestId } }).exec();
-          if (existingEmbedding) {
-            await existingEmbedding.update({ $set: embeddingDoc });
-          } else {
-            await this.db.embeddings.insert(embeddingDoc);
-          }
-        }
       }
     } catch (error) {
       console.error('Error updating network log with response:', error);
@@ -275,60 +228,10 @@ export class NetworkStore {
   }
 
   /**
-   * Generates embedding for baseUrl, requestBody, and responseBody.
-   */
-  private async generateEmbedding(entry: StoredNetworkData): Promise<number[] | null> {
-    try {
-      console.log(entry.baseUrl + entry.path + entry.requestBody + entry.responseBody)
-      // if (window && window.embed) {
-      //   return await window.embed.run(entry.baseUrl + entry.path + entry.requestBody + entry.responseBody)
-      // }
-      return null
-    } catch (error) {
-      console.error('Error generating embedding:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Calculates index values based on distance to sample vectors.
-   * @param embedding The embedding vector.
-   * @returns An array of distance values to each sample vector.
-   */
-  private calculateIndexValues(embedding: number[]): number[] {
-    const distances: number[] = [];
-    for (let i = 0; i < this.sampleVectors.length; i++) {
-      const distance = euclideanDistance(this.sampleVectors[i], embedding);
-      distances.push(distance);
-    }
-    return distances;
-  }
-
-  /**
-   * Removes the oldest entries to maintain the maximum limit.
-   */
-  private async removeOldestEntries(count: number): Promise<void> {
-    const oldestEntries = await this.db.network.find()
-      .sort({ timestamp: 'asc' })
-      .limit(count)
-      .exec();
-
-    for (const entry of oldestEntries) {
-      await entry.remove();
-      // Also remove from embeddings collection
-      const embeddingDoc = await this.db.embeddings.findOne({ selector: { id: entry.requestId } }).exec();
-      if (embeddingDoc) {
-        await embeddingDoc.remove();
-      }
-    }
-  }
-
-  /**
-   * Clears all network logs and embeddings.
+   * Clears all network logs.
    */
   public async clearLogs(): Promise<void> {
     await this.db.network.remove();
-    await this.db.embeddings.remove();
   }
 
   /**
@@ -392,155 +295,35 @@ export class NetworkStore {
     return uuidRegex.test(segment) || numberRegex.test(segment);
   }
 
+
   /**
-   * Generates a JSON schema for a specific endpoint based on collected network data.
-   * @param baseUrl The base URL of the API (e.g., 'https://api.example.com').
-   * @param path The specific endpoint path (e.g., '/api/stocks').
-   * @returns A JSON schema object or null if no data is found.
+   * Retrieves all tools from the tools collection.
    */
-  public async generateJsonSchema(baseUrl: string, path: string): Promise<any> {
-    // Retrieve all GET requests for the specified endpoint
-    const allEntries = await this.db.network.find({
+  public async getTools(): Promise<StorableTool[]> {
+    const pairs = await this.db.network.find({
       selector: {
-        baseUrl,
-        path,
-        method: 'GET'
+        responseStatus: { $gt: 0 },
+        responseBody: { $exists: true }
       }
     }).exec();
 
-    if (allEntries.length === 0) {
-      console.warn(`No GET requests found for ${baseUrl}${path}`);
-      return null;
-    }
+    const collector = new EndpointCollector();
 
-    const allQueryParams: string[] = [];
-    const allPathParams: string[] = [];
-
-    allEntries.forEach(entry => {
-      if (entry.queryParams) {
-        allQueryParams.push(...Object.keys(entry.queryParams));
+    for (const pair of pairs) {
+      try {
+        const parsedResponseBody = JSON.parse(pair.responseBody);
+        collector.processEndpoint({
+          url: pair.url,
+          requestPayload: pair.requestBody,
+          responsePayload: pair.responseBody,
+        });
+      } catch (error) {
+        console.log(`Error processing endpoint: ${pair.url}`, error);
       }
-      if (entry.pathParams) {
-        allPathParams.push(...entry.pathParams);
-      }
-    });
-
-    const uniqueQueryParams = Array.from(new Set(allQueryParams));
-    const uniquePathParams = Array.from(new Set(allPathParams));
-
-    // Determine required and optional query parameters
-    const requiredQueryParams: string[] = [];
-    uniqueQueryParams.forEach(param => {
-      const isRequired = allEntries.every(entry => entry.queryParams && param in entry.queryParams);
-      if (isRequired) {
-        requiredQueryParams.push(param);
-      }
-    });
-
-    // Assuming all path parameters are required
-    const requiredPathParams = uniquePathParams;
-
-    // Construct the JSON schema
-    const schema: any = {
-      type: 'object',
-      properties: {}
-    };
-
-    if (uniquePathParams.length > 0) {
-      schema.properties.pathParams = {
-        type: 'object',
-        properties: {}
-      };
-      uniquePathParams.forEach(param => {
-        schema.properties.pathParams.properties[param] = { type: 'string' };
-      });
-      schema.properties.pathParams.required = requiredPathParams;
     }
 
-    if (uniqueQueryParams.length > 0) {
-      schema.properties.queryParams = {
-        type: 'object',
-        properties: {}
-      };
-      uniqueQueryParams.forEach(param => {
-        schema.properties.queryParams.properties[param] = { type: 'string' };
-      });
-      schema.properties.queryParams.required = requiredQueryParams;
-    }
+    const tools = collector.getTools().filter(tool => tool.endpoints.length > 1);
 
-    // Define the required fields in the root object
-    schema.required = [];
-    if (uniquePathParams.length > 0) {
-      uniquePathParams.forEach(param => {
-        schema.required.push(`pathParams.${param}`);
-      });
-    }
-    if (requiredQueryParams.length > 0) {
-      requiredQueryParams.forEach(param => {
-        schema.required.push(`queryParams.${param}`);
-      });
-    }
-
-    return schema;
+    return tools;
   }
-
-  /**
-   * Search tool to retrieve multiple baseUrls and paths based on embeddings.
-   * @param query The user input query string.
-   * @param topK The number of top results to retrieve.
-   * @returns An array of matching network entries.
-   */
-  public async searchTools(query: string, topK: number = 10): Promise<StoredNetworkData[]> {
-    try {
-      const queryVector = await window.embed.run(query);
-
-      // Calculate distances to sample vectors
-      const indexValues = this.calculateIndexValues(queryVector);
-
-      const candidates = new Set<EmbeddingDocument>();
-
-      // Perform search based on indexed distances (Distance to Samples)
-      for (let i = 0; i < this.sampleVectors.length; i++) {
-        const distanceToIndex = indexValues[i];
-        const range = distanceToIndex * 0.003; // indexDistance
-
-        const lowerBound = indexNrToString(distanceToIndex - range);
-        const upperBound = indexNrToString(distanceToIndex + range);
-
-        const docsInRange = await this.db.embeddings.find({
-          selector: {
-            [`idx${i}`]: {
-              $gt: lowerBound,
-              $lt: upperBound
-            }
-          },
-          sort: [{ [`idx${i}`]: 'asc' }]
-        }).exec();
-
-        docsInRange.forEach(doc => candidates.add(doc));
-      }
-
-      // Calculate exact distances for candidates
-      const docsWithDistance = Array.from(candidates).map(doc => {
-        const distance = euclideanDistance(doc.embedding, queryVector);
-        return {
-          distance,
-          doc
-        };
-      });
-
-      // Sort by distance ascending
-      docsWithDistance.sort((a, b) => a.distance - b.distance);
-
-      // Select topK results
-      const topResults = docsWithDistance.slice(0, topK).map(item => item.doc.id);
-
-      const entries = await Promise.all(topResults.map(id => this.get(id)));
-      return entries.filter(entry => entry !== null) as StoredNetworkData[];
-    } catch (error) {
-      console.error('Error during search:', error);
-      return [];
-    }
-  }
-
 }

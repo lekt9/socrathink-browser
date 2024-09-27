@@ -1,16 +1,17 @@
 import { createRxDatabase, RxDatabase, RxCollection, RxJsonSchema, RxCollectionCreator } from 'rxdb';
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
 import { StoredCrawlData } from './crawl-store';
-import { StoredNetworkData } from './network-store';
+import { StoredNetworkData, ToolDocument } from './network-store';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
+
 export type CrawlsCollection = RxCollection<StoredCrawlData>;
 export type NetworkCollection = RxCollection<StoredNetworkData>;
-export type EmbeddingsCollection = RxCollection<EmbeddingDocument>;
+export type ToolsCollection = RxCollection<ToolDocument>; // New collection type
 
 export type MyDatabaseCollections = {
     crawls: CrawlsCollection;
     network: NetworkCollection;
-    embeddings: EmbeddingsCollection;
+    tools: ToolsCollection; // Added Tools collection
 };
 
 const crawlSchema: RxJsonSchema<StoredCrawlData> = {
@@ -35,10 +36,14 @@ const networkSchema: RxJsonSchema<StoredNetworkData> = {
     properties: {
         requestId: { type: 'string', maxLength: 255 },
         urlHash: { type: 'string', maxLength: 255 },
-        embedding: { type: 'array', items: { type: 'number' } },
+        url: { type: 'string', maxLength: 255 },
         baseUrl: { type: 'string', maxLength: 255 },
         path: { type: 'string', maxLength: 255 },
-        queryParams: { type: 'string', maxLength: 1000 },
+        queryParams: {
+            type: 'object',
+            additionalProperties: { type: 'string' },
+            maxProperties: 100
+        },
         pathParams: {
             type: 'array',
             items: { type: 'string' },
@@ -73,40 +78,47 @@ const networkSchema: RxJsonSchema<StoredNetworkData> = {
     ],
 };
 
-const embeddingsSchema: RxJsonSchema<EmbeddingDocument> = {
+const toolSchema: RxJsonSchema<ToolDocument> = { // New schema for ToolDocument
     version: 0,
-    primaryKey: 'id',
     type: 'object',
+    primaryKey: 'name', // Assuming 'name' is unique for each tool
     properties: {
-        id: { type: 'string', maxLength: 100 },
-        baseUrl: { type: 'string' },
-        path: { type: 'string' },
-        embedding: {
+        name: { type: 'string', maxLength: 255 },
+        pattern: { type: 'string', maxLength: 1000 },
+        endpoints: {
             type: 'array',
-            items: { type: 'number' },
+            items: {
+                type: 'object',
+                properties: {
+                    url: { type: 'string', maxLength: 2000 },
+                    requestPayload: { type: 'object' },
+                    responsePayload: { type: 'object' },
+                    pathInfo: {
+                        type: 'object',
+                        properties: {
+                            path: { type: 'string', maxLength: 1000 },
+                            queryParams: {
+                                type: 'object',
+                                additionalProperties: { type: 'string' },
+                            },
+                        },
+                        required: ['path', 'queryParams'],
+                    },
+                },
+                required: ['url', 'requestPayload', 'responsePayload', 'pathInfo'],
+            },
         },
-        idx0: { type: 'string', maxLength: 10 },
-        idx1: { type: 'string', maxLength: 10 },
-        idx2: { type: 'string', maxLength: 10 },
-        idx3: { type: 'string', maxLength: 10 },
-        idx4: { type: 'string', maxLength: 10 },
+        queryParamOptions: {
+            type: 'object',
+            additionalProperties: {
+                type: 'array',
+                items: { type: 'string' },
+            },
+        },
     },
-    required: ['id', 'baseUrl', 'path', 'idx0', 'idx1', 'idx2', 'idx3', 'idx4'],
-    indexes: ['idx0', 'idx1', 'idx2', 'idx3', 'idx4'],
+    required: ['name', 'pattern', 'endpoints', 'queryParamOptions'],
 };
 
-
-export interface EmbeddingDocument {
-    id: string;
-    baseUrl: string;
-    path: string;
-    embedding?: number[];
-    idx0: string;
-    idx1: string;
-    idx2: string;
-    idx3: string;
-    idx4: string;
-}
 
 export async function createDatabase(): Promise<RxDatabase<MyDatabaseCollections>> {
     const db = await createRxDatabase<MyDatabaseCollections>({
@@ -122,8 +134,8 @@ export async function createDatabase(): Promise<RxDatabase<MyDatabaseCollections
         network: {
             schema: networkSchema,
         },
-        embeddings: {
-            schema: embeddingsSchema,
+        tools: { // Added Tools collection
+            schema: toolSchema,
         },
     };
 

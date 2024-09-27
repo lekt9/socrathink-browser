@@ -18,6 +18,7 @@ declare global {
     embed: {
       run: (text: string) => Promise<any>;
     };
+    getTools: () => Promise<any>; // Exposed getTools
     process: typeof process;
     settings: any;
     require: (id: string) => any;
@@ -46,6 +47,9 @@ contextBridge.exposeInMainWorld('generateJsonSchema', async (baseUrl: string, pa
 });
 contextBridge.exposeInMainWorld('embed', {
   run: (text: string) => ipcRenderer.invoke('transformers:run', text)
+});
+contextBridge.exposeInMainWorld('getTools', async () => { // Exposed getTools
+  return ipcRenderer.invoke('get-tools');
 });
 const goBack = async () => {
   await ipcRenderer.invoke(`web-contents-call`, {
@@ -232,6 +236,9 @@ if (window.location.href.startsWith(WEBUI_BASE_URL)) {
       postMsg(data, res);
     } else if (data.type === 'save-settings') {
       ipcRenderer.send('save-settings', { settings: data.data });
+    } else if (data.type === 'get-tools') { // Handle get-tools message if needed
+      const res = await ipcRenderer.invoke('get-tools');
+      postMsg(data, res);
     }
   });
 
