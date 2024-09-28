@@ -1,5 +1,5 @@
 import { CrawlsCollection, createDatabase, NetworkCollection, ToolsCollection } from './rxdb-setup';
-import { RxDatabase, RxJsonSchema } from 'rxdb';
+import { RxDatabase, RxJsonSchema, RxDocument } from 'rxdb';
 // Removed Embedding imports and plugins
 import { sha256 } from 'hash-wasm';
 import { EndpointCollector, generateToolDefinitions, StorableTool } from './tools'
@@ -192,21 +192,67 @@ export class NetworkStore {
    * Updates a network log entry with response details.
    */
   public async updateLogWithResponse(details: { requestId: string; status: number; headers: Record<string, string>; body?: string }): Promise<void> {
-    try {
-      const entry = await this.db.network.findOne({ selector: { requestId: details.requestId } }).exec();
-      if (entry) {
-        const rawBody = details.body || '';
-        const contentHash = await this.hashString(rawBody);
-        const updatedEntry = {
-          responseStatus: details.status,
-          responseHeaders: details.headers,
-          responseBody: rawBody,
-          contentHash,
-        };
-        await entry.update({ $set: updatedEntry });
+    const maxRetries = 3;
+    let retries = 0;
+
+    while (retries < maxRetries) {
+      try {
+        const entry = await this.db.network.findOne({ selector: { requestId: details.requestId } }).exec();
+        if (entry) {
+          const rawBody = details.body || '';
+          const contentHash = await this.hashString(rawBody);
+          const updatedEntry = {
+            responseStatus: details.status,
+            responseHeaders: details.headers,
+            responseBody: rawBody,
+            contentHash,
+          };
+
+          await this.updateDocumentWithRetry(entry, updatedEntry);
+
+          // Every 100 requests, collect tools
+          if (await this.size() % 50 === 0) {
+            console.log('Collecting tools...');
+            await this.getTools();
+          }
+
+          return; // Success, exit the function
+        } else {
+          console.warn(`No entry found for requestId: ${details.requestId}`);
+          return;
+        }
+      } catch (error) {
+        if (error.code === 'CONFLICT' && retries < maxRetries - 1) {
+          retries++;
+          console.log(`Conflict detected, retrying (${retries}/${maxRetries})...`);
+        } else {
+          console.error('Error updating network log with response:', error);
+          throw error; // Rethrow if it's not a conflict or we've exhausted retries
+        }
       }
-    } catch (error) {
-      console.error('Error updating network log with response:', error);
+    }
+  }
+
+  private async updateDocumentWithRetry(doc: RxDocument, updateData: any): Promise<void> {
+    const maxRetries = 3;
+    let retries = 0;
+
+    while (retries < maxRetries) {
+      try {
+        await doc.update({
+          $set: updateData
+        });
+        return; // Success, exit the function
+      } catch (error) {
+        if (error.code === 'CONFLICT' && retries < maxRetries - 1) {
+          retries++;
+          console.log(`Conflict detected in document update, retrying (${retries}/${maxRetries})...`);
+          // Refresh the document before retrying
+          await doc.getLatest();
+        } else {
+          throw error; // Rethrow if it's not a conflict or we've exhausted retries
+        }
+      }
     }
   }
 
@@ -282,10 +328,10 @@ export class NetworkStore {
   /**
    * Retrieves all tools from the tools collection.
    */
-  public async getTools() {
+  public async deriveTools() {
     const pairs = await this.db.network.find({
       selector: {
-        responseStatus: { $gt: 0 },
+        responseStatus: { $gte: 200, $lt: 300 },
         responseBody: { $exists: true }
       }
     }).exec();
@@ -307,6 +353,45 @@ export class NetworkStore {
 
     const tools = collector.getTools().filter(tool => tool.endpoints.length > 1)
 
-    return generateToolDefinitions(tools);
+    return tools;
   }
+
+  public async getTools() {
+    const tools = await this.deriveTools();
+
+    const insertPromises = tools.flatMap(tool =>
+      tool.endpoints.map(async endpoint => {
+        const hash = await this.hashString(endpoint.url);
+        try {
+          const insertedDoc = await this.db.crawls.insert({
+            urlHash: hash,
+            url: endpoint.url,
+            contentHash: hash,
+            content: JSON.stringify({ url: endpoint.url, request: endpoint.requestPayload, response: endpoint.responsePayload }),
+            depth: null,
+            timestamp: Date.now(),
+          });
+          return { success: true, url: endpoint.url, document: insertedDoc };
+        } catch (error) {
+          console.error(`Failed to insert crawl for URL: ${endpoint.url}`, error);
+          return { success: false, url: endpoint.url, error: error.message };
+        }
+      })
+    );
+
+    const results = await Promise.all(insertPromises);
+
+    const successfulInserts = results.filter(result => result.success);
+    const failedInserts = results.filter(result => !result.success);
+
+    console.log({
+      totalProcessed: results.length,
+      successfulInserts: successfulInserts.length,
+      failedInserts: failedInserts.length,
+      failedUrls: failedInserts.map(result => result.url)
+    });
+
+    return tools;
+  }
+
 }

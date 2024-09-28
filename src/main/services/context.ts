@@ -125,10 +125,14 @@ export class ContextService {
         // Get the top 10 non-depth 0 entries
         const top10NonDepth0 = sortedNonDepth0Entries.slice(0, 10);
 
-        // Combine the results
-        const result = [...top10Depth0, ...top10NonDepth0];
+        const sortedDepthNullEntries = allEntries
+            .filter(entry => entry.depth === null)
+            .sort((a, b) => b.timestamp - a.timestamp);
 
-        console.log(`Returning ${result.length} entries (${top10Depth0.length} depth 0, ${top10NonDepth0.length} non-depth 0)`);
+        // Combine the results
+        const result = [...sortedDepthNullEntries, ...top10Depth0, ...top10NonDepth0];
+
+        console.log(`Returning ${result.length} entries (${sortedDepthNullEntries.length} depth null, ${top10Depth0.length} depth 0, ${top10NonDepth0.length} non-depth 0)`);
 
         return result;
     }
