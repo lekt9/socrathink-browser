@@ -47,12 +47,6 @@ const mainConfig = getConfig({
   externals: {
     'better-sqlite3': 'commonjs better-sqlite3',
   },
-  resolve: {
-    alias: {
-      sharp$: false,
-      'onnxruntime-node$': false,
-    },
-  },
 });
 
 const preloadConfig = getConfig({

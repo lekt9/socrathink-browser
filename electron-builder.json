@@ -1,5 +1,5 @@
 {
-  "appId": "com.innatical.socrathink",
+  "appId": "com.the clarity project.socrathink",
   "productName": "Socrathink",
   "nsis": {
     "include": "static/installer.nsh"

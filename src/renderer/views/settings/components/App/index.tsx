@@ -280,7 +280,7 @@ export default observer(() => {
             Privacy
           </MenuItem>
           <MenuItem section="account" icon={ICON_PERSON}>
-            Innatical ID
+            The Clarity Project ID
           </MenuItem>
           {/* <MenuItem section="permissions">Site permissions</MenuItem> */}
 

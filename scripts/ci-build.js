@@ -50,7 +50,7 @@ const getInput = (name) => {
 
       const newEBConfig = {
         ...electronBuilder,
-        appId: 'com.innatical.socrathink',
+        appId: 'com.the clarity project.socrathink',
         productName: 'socrathink Nightly',
         directories: {
           output: 'dist',

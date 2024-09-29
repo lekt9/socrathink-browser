@@ -232,7 +232,7 @@ export class StorageService {
 
   private async saveBookmarks() {
     if (!this.settings.object.token) return;
-    await fetch('https://api.socrathink.innatical.com/bookmarks', {
+    await fetch('https://api.socrathink.the clarity project.com/bookmarks', {
       method: 'PUT',
       body: JSON.stringify(this.bookmarks),
       headers: {
@@ -286,7 +286,7 @@ export class StorageService {
     let items = await this.find<IBookmark>({ scope: 'bookmarks', query: {} });
 
     if (this.settings.object.token) {
-      const req = await fetch('https://api.socrathink.innatical.com/bookmarks', {
+      const req = await fetch('https://api.socrathink.the clarity project.com/bookmarks', {
         headers: {
           authorization: this.settings.object.token,
         },

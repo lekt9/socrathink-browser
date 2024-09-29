@@ -6,7 +6,7 @@
   WriteRegStr SHCTX "SOFTWARE\Classes\socrathink\Application" "ApplicationIcon" "$INSTDIR\socrathink.exe,0"
   WriteRegStr SHCTX "SOFTWARE\Classes\socrathink\Application" "ApplicationName" "socrathink"
   WriteRegStr SHCTX "SOFTWARE\Classes\socrathink\Application" "ApplicationCompany" "socrathink"      
-  WriteRegStr SHCTX "SOFTWARE\Classes\socrathink\Application" "ApplicationDescription" "Extensible, fast and innovative web browser with Innatical UI."      
+  WriteRegStr SHCTX "SOFTWARE\Classes\socrathink\Application" "ApplicationDescription" "Extensible, fast and innovative web browser with The Clarity Project UI."      
   WriteRegStr SHCTX "SOFTWARE\Classes\socrathink\DefaultIcon" "DefaultIcon" "$INSTDIR\socrathink.exe,0"
   WriteRegStr SHCTX "SOFTWARE\Classes\socrathink\shell\open\command" "" '"$INSTDIR\socrathink.exe" "%1"'
 
@@ -15,7 +15,7 @@
 
   WriteRegStr SHCTX "SOFTWARE\Clients\StartMenuInternet\socrathink" "" "socrathink"
   WriteRegStr SHCTX "SOFTWARE\Clients\StartMenuInternet\socrathink\DefaultIcon" "" "$INSTDIR\socrathink.exe,0"
-  WriteRegStr SHCTX "SOFTWARE\Clients\StartMenuInternet\socrathink\Capabilities" "ApplicationDescription" "Extensible, fast and innovative web browser with Innatical UI."
+  WriteRegStr SHCTX "SOFTWARE\Clients\StartMenuInternet\socrathink\Capabilities" "ApplicationDescription" "Extensible, fast and innovative web browser with The Clarity Project UI."
   WriteRegStr SHCTX "SOFTWARE\Clients\StartMenuInternet\socrathink\Capabilities" "ApplicationName" "socrathink"
   WriteRegStr SHCTX "SOFTWARE\Clients\StartMenuInternet\socrathink\Capabilities" "ApplicationIcon" "$INSTDIR\socrathink.exe,0"
   WriteRegStr SHCTX "SOFTWARE\Clients\StartMenuInternet\socrathink\Capabilities\FileAssociations" ".htm" "socrathink"

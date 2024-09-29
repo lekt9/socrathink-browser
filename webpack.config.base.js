@@ -14,8 +14,8 @@ const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
 const INCLUDE = resolve(__dirname, 'src');
 
 const BUILD_FLAGS = {
-  ENABLE_EXTENSIONS: false,
-  ENABLE_AUTOFILL: false,
+  ENABLE_EXTENSIONS: true,
+  ENABLE_AUTOFILL: true,
 };
 
 process.env = {

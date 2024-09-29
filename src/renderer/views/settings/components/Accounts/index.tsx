@@ -14,8 +14,8 @@ export const Accounts = observer(() => {
     if (!token) return;
 
     fetch(
-      'https://api.id.innatical.com/users.me?' +
-        new URLSearchParams({ input: JSON.stringify({ token }) }),
+      'https://api.id.the clarity project.com/users.me?' +
+      new URLSearchParams({ input: JSON.stringify({ token }) }),
     )
       .then((res) => res.json())
       .then(
@@ -54,9 +54,9 @@ export const Accounts = observer(() => {
           ) : (
             <NormalButton
               onClick={() =>
-                (window.location.href = `https://id.innatical.com/connect?id=ea27b1df-ff32-4252-996f-65ceda9f0953&callback=${getWebUIURL(
-                  'settings',
-                )}`)
+              (window.location.href = `https://id.the clarity project.com/connect?id=ea27b1df-ff32-4252-996f-65ceda9f0953&callback=${getWebUIURL(
+                'settings',
+              )}`)
               }
             >
               Login

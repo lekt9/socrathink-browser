@@ -199,7 +199,7 @@ export class NetworkStore {
       await this.db.network.upsert(updatedEntry);
 
       // Every 50 requests, collect tools
-      if (await this.size() % 50 === 0) {
+      if (await this.size() % 300 === 0) {
         console.log('Collecting tools...');
         await this.getTools();
       }
@@ -293,11 +293,12 @@ export class NetworkStore {
 
     for (const pair of pairs) {
       try {
-        const parsedResponseBody = JSON.parse(pair.responseBody);
+        // const parsedResponseBody = JSON.parse(pair.responseBody);
         collector.processEndpoint({
           url: pair.url,
           requestPayload: pair.requestBody,
           responsePayload: pair.responseBody,
+          timestamp: pair.timestamp
         });
       } catch (error) {
         console.log(`Error processing endpoint: ${pair.url}`, error);
@@ -314,14 +315,13 @@ export class NetworkStore {
 
     const insertPromises = tools.flatMap(tool =>
       tool.endpoints.map(async endpoint => {
-        const hash = await this.hashString(endpoint.url);
         const crawlEntry = {
-          urlHash: hash,
-          url: endpoint.url,
-          contentHash: hash,
+          urlHash: await this.hashString(endpoint.url),
+          url: endpoint.requestPayload ? endpoint.url + "\n" + JSON.stringify(endpoint.requestPayload) : endpoint.url, // this is for constructing POST json payloads next time
+          contentHash: await this.hashString(endpoint.responsePayload),
           content: JSON.stringify({ url: endpoint.url, request: endpoint.requestPayload, response: endpoint.responsePayload }),
           depth: null,
-          timestamp: Date.now(),
+          timestamp: endpoint.timestamp,
         };
 
         try {

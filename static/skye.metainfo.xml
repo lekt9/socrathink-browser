@@ -4,11 +4,11 @@
     <metadata_license>CC-BY-SA-4.0</metadata_license>
     <project_license>GPL-3.0-or-later</project_license>
     <name>socrathink Browser</name>
-    <url type="homepage">https://socrathink.innatical.com</url>
-    <summary>The Next Generation of Web Browsing, Powered by Innatical</summary>
+    <url type="homepage">https://socrathink.the clarity project.com</url>
+    <summary>The Next Generation of Web Browsing, Powered by The Clarity Project</summary>
     <description>
         <p>
-        Socrathink is a next generation web browser that integrates into the Innatical ecosystem, provides elegant design, has built-in ad and tracker blocking, and prioritizes speed.
+        Socrathink is a next generation web browser that integrates into the The Clarity Project ecosystem, provides elegant design, has built-in ad and tracker blocking, and prioritizes speed.
         </p>
     </description>
     <launchable type="desktop-id">socrathink.desktop</launchable>

@@ -2,7 +2,7 @@
   "name": "socrathink",
   "version": "1.0.1",
   "sideEffects": false,
-  "description": "Extensible, fast and innovative web browser with Innatical UI.",
+  "description": "Extensible, fast and innovative web browser with The Clarity Project UI.",
   "keywords": [
     "web-browser",
     "material",
@@ -11,9 +11,9 @@
     "mobx",
     "styled-components"
   ],
-  "homepage": "https://github.com/omnidorabrowser/socrathink#readme",
+  "homepage": "https://github.com/the-clarity-projekt/socrathink-browser#readme",
   "main": "build/main.bundle.js",
-  "author": "Innatical LLC <contact@innatical.com>",
+  "author": "The Clarity Project LLC <contact@theclarityproject.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/omnidorabrowser/socrathink.git"

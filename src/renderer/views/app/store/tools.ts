@@ -4,6 +4,7 @@ export interface RequestResponsePair {
     url: string;
     requestPayload: any;
     responsePayload: any;
+    timestamp: number;
 }
 export interface StorableTool {
     name: string;
@@ -24,6 +25,7 @@ export interface ProcessedEndpointInfo {
     responsePayload: any;
     pathInfo: PathInfo;
     schemaSignature: string;
+    timestamp: number;
 }
 
 export class Tool implements StorableTool {
@@ -85,7 +87,7 @@ export class EndpointCollector {
         const processedInfo: ProcessedEndpointInfo = {
             ...pair,
             pathInfo,
-            schemaSignature
+            schemaSignature,
         };
 
         this.endpoints.push(processedInfo);
