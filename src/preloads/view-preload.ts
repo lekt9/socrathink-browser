@@ -13,6 +13,7 @@ declare global {
   interface Window {
     authedFetch: (url: string, options?: any) => Promise<any>;
     fetchContext: (url: string) => Promise<any>;
+    openUrl: (url: string) => Promise<any>;
     searchTools: (query: string, topK?: number) => Promise<any>;
     generateJsonSchema: (baseUrl: string, path: string) => Promise<any>;
     embed: {
@@ -34,7 +35,9 @@ declare global {
 contextBridge.exposeInMainWorld('authedFetch', async (url: string, options = {}) => {
   return ipcRenderer.invoke('authed-fetch', url, options);
 });
-
+contextBridge.exposeInMainWorld('openUrl', async (url: string) => {
+  return ipcRenderer.invoke('open-url', url);
+});
 contextBridge.exposeInMainWorld('fetchContext', async (url: string) => {
   return ipcRenderer.invoke('fetch-context', url);
 });

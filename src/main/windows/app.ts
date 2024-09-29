@@ -254,6 +254,7 @@ export class AppWindow {
     });
 
     this.attachedView.webContents.loadURL('https://app.socrathink.com');
+    // this.attachedView.webContents.loadURL('http://localhost:3000');
 
     // Enable remote module for the attached view
     require('@electron/remote/main').enable(this.attachedView.webContents);

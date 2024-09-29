@@ -6,7 +6,7 @@ import { Application } from '../application';
 import { hybridFetch } from '~/utils/hybrid-fetch';
 import { CrawlStore, StoredCrawlData } from '~/renderer/views/app/store/crawl-store';
 import { async } from 'rxjs';
-import { NetworkStore, StoredNetworkData, ToolDocument } from '~/renderer/views/app/store/network-store';
+import { NetworkStore, StoredNetworkData } from '~/renderer/views/app/store/network-store';
 import { run } from '~/utils/model';
 
 export class ContextService {
@@ -15,9 +15,7 @@ export class ContextService {
     }
 
     private setupIpcHandlers() {
-        ipcMain.handle('transformers:run', async (event, text: string) => {
-            return run(text);
-        });
+
         ipcMain.handle('authed-fetch', async (event, url: string, options: AuthFetchOptions = {}) => {
             try {
                 if (url && url.length > 0) {

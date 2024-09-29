@@ -150,7 +150,6 @@ export class NetworkStore {
       queryParams[key] = value;
     });
 
-    // Extract path parameters (e.g., /api/stocks/123 -> ["param3"])
     const pathParams = this.extractPathParams(path);
 
     const newEntry: StoredNetworkData = {
@@ -164,7 +163,7 @@ export class NetworkStore {
       method: details.method,
       requestHeaders: details.headers,
       requestBody: details.body,
-      responseStatus: 0, // Placeholder, to be updated on response received
+      responseStatus: 0,
       responseHeaders: {},
       responseBody: undefined,
       contentHash: '',
@@ -173,14 +172,8 @@ export class NetworkStore {
     };
 
     try {
-      // const currentCount = await this.size();
-      // if (currentCount >= this.MAX_ITEMS) {
-      //   await this.removeOldestEntries(1);
-      // }
       console.log(newEntry);
-
-      await this.db.network.insert(newEntry);
-
+      await this.db.network.upsert(newEntry);
       return newEntry;
     } catch (error) {
       console.error('Error adding network request to log:', error);
@@ -192,67 +185,27 @@ export class NetworkStore {
    * Updates a network log entry with response details.
    */
   public async updateLogWithResponse(details: { requestId: string; status: number; headers: Record<string, string>; body?: string }): Promise<void> {
-    const maxRetries = 3;
-    let retries = 0;
+    try {
+      const rawBody = details.body || '';
+      const contentHash = await this.hashString(rawBody);
+      const updatedEntry = {
+        requestId: details.requestId,
+        responseStatus: details.status,
+        responseHeaders: details.headers,
+        responseBody: rawBody,
+        contentHash,
+      };
 
-    while (retries < maxRetries) {
-      try {
-        const entry = await this.db.network.findOne({ selector: { requestId: details.requestId } }).exec();
-        if (entry) {
-          const rawBody = details.body || '';
-          const contentHash = await this.hashString(rawBody);
-          const updatedEntry = {
-            responseStatus: details.status,
-            responseHeaders: details.headers,
-            responseBody: rawBody,
-            contentHash,
-          };
+      await this.db.network.upsert(updatedEntry);
 
-          await this.updateDocumentWithRetry(entry, updatedEntry);
-
-          // Every 100 requests, collect tools
-          if (await this.size() % 50 === 0) {
-            console.log('Collecting tools...');
-            await this.getTools();
-          }
-
-          return; // Success, exit the function
-        } else {
-          console.warn(`No entry found for requestId: ${details.requestId}`);
-          return;
-        }
-      } catch (error) {
-        if (error.code === 'CONFLICT' && retries < maxRetries - 1) {
-          retries++;
-          console.log(`Conflict detected, retrying (${retries}/${maxRetries})...`);
-        } else {
-          console.error('Error updating network log with response:', error);
-          throw error; // Rethrow if it's not a conflict or we've exhausted retries
-        }
+      // Every 50 requests, collect tools
+      if (await this.size() % 50 === 0) {
+        console.log('Collecting tools...');
+        await this.getTools();
       }
-    }
-  }
-
-  private async updateDocumentWithRetry(doc: RxDocument, updateData: any): Promise<void> {
-    const maxRetries = 3;
-    let retries = 0;
-
-    while (retries < maxRetries) {
-      try {
-        await doc.update({
-          $set: updateData
-        });
-        return; // Success, exit the function
-      } catch (error) {
-        if (error.code === 'CONFLICT' && retries < maxRetries - 1) {
-          retries++;
-          console.log(`Conflict detected in document update, retrying (${retries}/${maxRetries})...`);
-          // Refresh the document before retrying
-          await doc.getLatest();
-        } else {
-          throw error; // Rethrow if it's not a conflict or we've exhausted retries
-        }
-      }
+    } catch (error) {
+      console.error('Error updating network log with response:', error);
+      throw error;
     }
   }
 
@@ -362,16 +315,18 @@ export class NetworkStore {
     const insertPromises = tools.flatMap(tool =>
       tool.endpoints.map(async endpoint => {
         const hash = await this.hashString(endpoint.url);
+        const crawlEntry = {
+          urlHash: hash,
+          url: endpoint.url,
+          contentHash: hash,
+          content: JSON.stringify({ url: endpoint.url, request: endpoint.requestPayload, response: endpoint.responsePayload }),
+          depth: null,
+          timestamp: Date.now(),
+        };
+
         try {
-          const insertedDoc = await this.db.crawls.insert({
-            urlHash: hash,
-            url: endpoint.url,
-            contentHash: hash,
-            content: JSON.stringify({ url: endpoint.url, request: endpoint.requestPayload, response: endpoint.responsePayload }),
-            depth: null,
-            timestamp: Date.now(),
-          });
-          return { success: true, url: endpoint.url, document: insertedDoc };
+          await this.db.crawls.upsert(crawlEntry);
+          return { success: true, url: endpoint.url };
         } catch (error) {
           console.error(`Failed to insert crawl for URL: ${endpoint.url}`, error);
           return { success: false, url: endpoint.url, error: error.message };

@@ -171,55 +171,17 @@ export class Application {
 
     ipcMain.handle('open-url', async (e, url, scrollToText?: string) => {
       // console.log({ url, scrollToText });
-      scrollToText = scrollToText.slice(0, 100)
+
       if (!this.windows.current) {
         this.windows.current = this.windows.open();
       }
       this.windows.current.win.focus();
 
+      this.windows.current.viewManager.create({
+        url: url,
+        active: true,
+      }, false, true, false, scrollToText);
 
-      // Modify the existing code in the Application class
-      if (url.includes('context.socrathink')) {
-        try {
-          const response = await handleContextOmnidoraRequest(url);
-          const contentType = response.headers.get('Content-Type') || 'application/octet-stream';
-
-          // Handle binary data
-          const arrayBuffer = await response.arrayBuffer();
-          const base64 = Buffer.from(arrayBuffer).toString('base64');
-          const dataUrl = `data:${contentType};base64,${base64}`;
-
-          if (contentType === 'application/pdf' && scrollToText) {
-            console.log({ scrollToText });
-
-            // Parse the PDF content
-            const pdfContent = await parsePdf(arrayBuffer);
-
-            // Find the most similar page
-            const mostSimilarPage = await this.findMostSimilarPage(pdfContent, scrollToText);
-
-            const pdfUrl = `${dataUrl}#page=${mostSimilarPage}`;
-
-            this.windows.current.viewManager.create({
-              url: pdfUrl,
-              active: true,
-            }, false, true, false);
-          } else {
-            this.windows.current.viewManager.create({
-              url: dataUrl,
-              active: true,
-            }, false, true, false, scrollToText);
-          }
-        } catch (error) {
-          console.error('Error handling context-socrathink URL:', error);
-          // Optionally, you can show an error message to the user here
-        }
-      } else {
-        this.windows.current.viewManager.create({
-          url: url,
-          active: true,
-        }, false, true, false, scrollToText);
-      }
     });
     await this.onReady();
   }
