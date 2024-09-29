@@ -1,11 +1,8 @@
-import { createDatabase, CrawlsCollection } from './rxdb-setup';
-import { addRxPlugin, RxDatabase } from 'rxdb';
+import * as Datastore from '@seald-io/nedb';
+import { getPath } from '~/utils';
 import { isContentUseful } from '~/utils/parse';
-import { RxDBUpdatePlugin } from 'rxdb/plugins/update';
 import { extractQueryParams } from '~/utils/url';
 import { sha256 } from 'hash-wasm';
-
-addRxPlugin(RxDBUpdatePlugin);
 
 export interface StoredCrawlData {
     urlHash: string;
@@ -23,24 +20,22 @@ export interface DomainStatus {
 
 export class CrawlStore {
     private static instance: CrawlStore;
-    private db: RxDatabase<{
-        crawls: CrawlsCollection;
-    }>;
+    private db: Datastore;
     private requestCount: number = 0;
-    private readonly MAX_ITEMS = 300;
+    private readonly MAX_ITEMS = 3000;
 
-    private constructor() { }
+    private constructor() {
+        this.db = new Datastore({
+            filename: getPath('storage/crawls.db'),
+            autoload: true,
+        });
+    }
 
     public static async getInstance(): Promise<CrawlStore> {
         if (!CrawlStore.instance) {
             CrawlStore.instance = new CrawlStore();
-            await CrawlStore.instance.initialize();
         }
         return CrawlStore.instance;
-    }
-
-    private async initialize(): Promise<void> {
-        this.db = await createDatabase();
     }
 
     private getDomainFromUrl(url: string): string {
@@ -63,13 +58,11 @@ export class CrawlStore {
 
     public async add(url: string, rawHtml: string, content: string, depth: number, jsonResponse?: object): Promise<boolean> {
         if (!isContentUseful(content)) return false;
-        // console.log("content useful", content);
         const domain = this.getDomainFromUrl(url);
         if (!domain) return false;
 
         const { strippedUrl, params } = extractQueryParams(url);
         const contentHash = await this.hashString(content);
-
         const urlHash = await this.hashString(strippedUrl);
 
         try {
@@ -82,64 +75,108 @@ export class CrawlStore {
                 depth: depth,
             };
 
-            // Check if we've reached the maximum number of items
             const currentCount = await this.size();
             if (currentCount >= this.MAX_ITEMS) {
-                // Remove the oldest entry
                 await this.removeOldestEntries(1);
             }
 
-            await this.db.crawls.insert(newEntry);
-
-            // console.log("Stored new entry", newEntry);
-
-            return true;
+            return new Promise((resolve, reject) => {
+                this.db.insert(newEntry, (err) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(true);
+                    }
+                });
+            });
         } catch (error) {
-            // console.error("Error adding entry:", error);
+            console.error("Error adding entry:", error);
             return false;
         }
     }
 
     private async removeOldestEntries(count: number): Promise<void> {
-        const oldestEntries = await this.db.crawls.find()
-            .sort({ timestamp: "asc" })
-            .limit(count)
-            .exec();
-
-        for (const entry of oldestEntries) {
-            await entry.remove();
-        }
+        return new Promise((resolve, reject) => {
+            this.db.find({}).sort({ timestamp: 1 }).limit(count).exec((err, docs) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    const removePromises = docs.map(doc =>
+                        new Promise((resolve, reject) => {
+                            this.db.remove({ _id: doc._id }, {}, (err) => {
+                                if (err) reject(err);
+                                else resolve();
+                            });
+                        })
+                    );
+                    Promise.all(removePromises).then(() => resolve()).catch(reject);
+                }
+            });
+        });
     }
 
     public async get(url: string): Promise<StoredCrawlData | null> {
         const { strippedUrl } = extractQueryParams(url);
         const urlHash = await this.hashString(strippedUrl);
-        const result = await this.db.crawls.findOne({ selector: { urlHash } }).exec();
-        if (result) {
-            const data = result.toJSON();
-            if (!data.content) {
-                console.log(`Content for URL ${url} has expired.`);
-            }
-            return data as StoredCrawlData;
-        }
-        return null;
+        return new Promise((resolve, reject) => {
+            this.db.findOne({ urlHash }, (err, doc) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    if (doc && !doc.content) {
+                        console.log(`Content for URL ${url} has expired.`);
+                    }
+                    resolve(doc as StoredCrawlData | null);
+                }
+            });
+        });
     }
 
     public async has(url: string): Promise<boolean> {
-        const result = await this.db.crawls.findOne({ selector: { url } }).exec();
-        return !!result;
+        return new Promise((resolve, reject) => {
+            this.db.findOne({ url }, (err, doc) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(!!doc);
+                }
+            });
+        });
     }
 
     public async getAll(): Promise<StoredCrawlData[]> {
-        const results = await this.db.crawls.find().exec();
-        return results.map(doc => doc.toJSON() as StoredCrawlData);
+        return new Promise((resolve, reject) => {
+            this.db.find({}, (err, docs) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(docs as StoredCrawlData[]);
+                }
+            });
+        });
     }
 
     public async clear(): Promise<void> {
-        await this.db.crawls.remove();
+        return new Promise((resolve, reject) => {
+            this.db.remove({}, { multi: true }, (err) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve();
+                }
+            });
+        });
     }
 
     public async size(): Promise<number> {
-        return await this.db.crawls.count().exec();
+        return new Promise((resolve, reject) => {
+            this.db.count({}, (err, count) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(count);
+                }
+            });
+        });
     }
 }

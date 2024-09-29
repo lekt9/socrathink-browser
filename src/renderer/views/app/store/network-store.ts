@@ -1,79 +1,8 @@
-import { CrawlsCollection, createDatabase, NetworkCollection, ToolsCollection } from './rxdb-setup';
-import { RxDatabase, RxJsonSchema, RxDocument } from 'rxdb';
-// Removed Embedding imports and plugins
+import * as Datastore from '@seald-io/nedb';
+import { getPath } from '~/utils';
 import { sha256 } from 'hash-wasm';
-import { EndpointCollector, generateToolDefinitions, StorableTool } from './tools'
-// New file for ToolStore if separated, alternatively integrate into network-store.ts
+import { EndpointCollector, generateToolDefinitions, StorableTool } from './tools';
 
-
-export const toolSchema: RxJsonSchema<StorableTool> = {
-  version: 0,
-  type: 'object',
-  primaryKey: 'name',
-  properties: {
-    name: { type: 'string', maxLength: 255 },
-    pattern: { type: 'string', maxLength: 1000 },
-    endpoints: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          url: { type: 'string', maxLength: 2000 },
-          requestPayload: { type: 'object' },
-          responsePayload: { type: 'object' },
-          pathInfo: {
-            type: 'object',
-            properties: {
-              path: { type: 'string', maxLength: 1000 },
-              queryParams: {
-                type: 'object',
-                additionalProperties: {
-                  type: 'string',
-                  enum: ['enum', 'dynamic']
-                }
-              },
-            },
-            required: ['path', 'queryParams'],
-          },
-        },
-        required: ['url', 'requestPayload', 'responsePayload', 'pathInfo'],
-      },
-    },
-    queryParamOptions: {
-      type: 'object',
-      additionalProperties: {
-        type: 'array',
-        items: { type: 'string' },
-      },
-    },
-  },
-  required: ['name', 'pattern', 'endpoints', 'queryParamOptions'],
-};
-
-/**
- * Utility function to sort an array of objects by a numeric property.
- * @param prop The property name to sort by.
- * @returns A comparator function.
- */
-function sortByObjectNumberProperty(prop: string) {
-  return (a: any, b: any) => {
-    return a[prop] - b[prop];
-  };
-}
-
-/**
- * Utility function to convert a number to a fixed-length string with leading zeros.
- * @param num The number to convert.
- * @param length The desired string length.
- * @returns The fixed-length string.
- */
-function indexNrToString(num: number, length: number = 10): string {
-  return num.toFixed(6).padStart(length, '0');
-}
-
-/**
- * Interface for storing network data.
- */
 export interface StoredNetworkData {
   requestId: string;
   urlHash: string;
@@ -93,53 +22,31 @@ export interface StoredNetworkData {
   parentUrlHash?: string;
 }
 
-/**
- * Class representing the network store with tool management capabilities.
- */
 export class NetworkStore {
   private static instance: NetworkStore;
-  private db: RxDatabase<{
-    network: NetworkCollection,
-    crawls: CrawlsCollection,
-    tools: ToolsCollection,
-  }>;
+  private db: Datastore;
   private readonly MAX_ITEMS = 2000;
-  private sampleVectors: number[][] = [
-    // Existing sample vectors if any
-  ];
 
-  private constructor(db: RxDatabase<{
-    network: NetworkCollection,
-    crawls: CrawlsCollection,
-    tools: ToolsCollection,
-  }>) {
-    this.db = db;
+  private constructor() {
+    this.db = new Datastore({
+      filename: getPath('storage/network.db'),
+      autoload: true,
+    });
   }
 
-  /**
-   * Retrieves the singleton instance of NetworkStore.
-   */
   public static async getInstance(): Promise<NetworkStore> {
     if (!NetworkStore.instance) {
-      const db = await createDatabase();
-      NetworkStore.instance = new NetworkStore(db);
+      NetworkStore.instance = new NetworkStore();
     }
     return NetworkStore.instance;
   }
 
-  /**
-   * Hashes a given string using SHA-256.
-   */
   async hashString(str: string): Promise<string> {
     return await sha256(str);
   }
 
-  /**
-   * Adds a GET request to the network log with parsed path and query parameters.
-   * Returns the stored entry for mapping purposes.
-   */
   public async addRequestToLog(details: { requestId: string; url: string; method: string; headers: Record<string, string>; body?: string; initiator: any }): Promise<StoredNetworkData | null> {
-    if (details.method.toUpperCase() !== 'GET') return null; // Focus only on GET requests
+    if (details.method.toUpperCase() !== 'GET') return null;
 
     const urlHash = await this.hashString(details.url);
     const urlObj = new URL(details.url);
@@ -171,94 +78,111 @@ export class NetworkStore {
       parentUrlHash: details.initiator?.urlHash
     };
 
-    try {
-      console.log(newEntry);
-      await this.db.network.upsert(newEntry);
-      return newEntry;
-    } catch (error) {
-      console.error('Error adding network request to log:', error);
-      return null;
-    }
+    return new Promise((resolve, reject) => {
+      this.db.insert(newEntry, (err, doc) => {
+        if (err) {
+          console.error('Error adding network request to log:', err);
+          reject(err);
+        } else {
+          resolve(doc as StoredNetworkData);
+        }
+      });
+    });
   }
 
-  /**
-   * Updates a network log entry with response details.
-   */
   public async updateLogWithResponse(details: { requestId: string; status: number; headers: Record<string, string>; body?: string }): Promise<void> {
     try {
       const rawBody = details.body || '';
       const contentHash = await this.hashString(rawBody);
       const updatedEntry = {
-        requestId: details.requestId,
         responseStatus: details.status,
         responseHeaders: details.headers,
         responseBody: rawBody,
         contentHash,
       };
 
-      await this.db.network.upsert(updatedEntry);
-
-      // Every 50 requests, collect tools
-      if (await this.size() % 300 === 0) {
-        console.log('Collecting tools...');
-        await this.getTools();
-      }
+      return new Promise((resolve, reject) => {
+        this.db.update({ requestId: details.requestId }, { $set: updatedEntry }, {}, (err) => {
+          if (err) {
+            console.error('Error updating network log with response:', err);
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
     } catch (error) {
       console.error('Error updating network log with response:', error);
       throw error;
     }
   }
 
-  /**
-   * Clears all network logs.
-   */
   public async clearLogs(): Promise<void> {
-    await this.db.network.remove();
+    return new Promise((resolve, reject) => {
+      this.db.remove({}, { multi: true }, (err) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
   }
 
-  /**
-   * Retrieves a specific network log entry by requestId.
-   */
   public async get(requestId: string): Promise<StoredNetworkData | null> {
-    const result = await this.db.network.findOne({ selector: { requestId } }).exec();
-    return result ? result.toJSON() as StoredNetworkData : null;
+    return new Promise((resolve, reject) => {
+      this.db.findOne({ requestId }, (err, doc) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(doc as StoredNetworkData | null);
+        }
+      });
+    });
   }
 
-  /**
-   * Checks if a requestId exists in the network logs.
-   */
   public async has(requestId: string): Promise<boolean> {
-    const result = await this.db.network.findOne({ selector: { requestId } }).exec();
-    return !!result;
+    return new Promise((resolve, reject) => {
+      this.db.findOne({ requestId }, (err, doc) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(!!doc);
+        }
+      });
+    });
   }
 
-  /**
-   * Retrieves all network log entries.
-   */
   public async getAll(): Promise<StoredNetworkData[]> {
-    const results = await this.db.network.find().exec();
-    return results.map(doc => doc.toJSON() as StoredNetworkData);
+    return new Promise((resolve, reject) => {
+      this.db.find({}, (err, docs) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(docs as StoredNetworkData[]);
+        }
+      });
+    });
   }
 
-  /**
-   * Gets the current number of network log entries.
-   */
   public async size(): Promise<number> {
-    return await this.db.network.count().exec();
+    return new Promise((resolve, reject) => {
+      this.db.count({}, (err, count) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(count);
+        }
+      });
+    });
   }
 
-  /**
-   * Extracts path parameters from a URL path.
-   * Assumes path parameters are segments that are numeric or UUIDs.
-   * Modify this logic based on your API's path parameter patterns.
-   */
   private extractPathParams(path: string): string[] | undefined {
     const segments = path.split('/').filter(Boolean);
     const params: string[] = [];
 
     segments.forEach((segment, index) => {
       if (this.isDynamicSegment(segment)) {
-        // Example: If the segment is dynamic, name it based on its position
         params.push(`param${index}`);
       }
     });
@@ -266,48 +190,38 @@ export class NetworkStore {
     return params.length > 0 ? params : undefined;
   }
 
-  /**
-   * Determines if a path segment is dynamic.
-   * Modify this logic based on how your API defines dynamic segments.
-   */
   private isDynamicSegment(segment: string): boolean {
-    // Example: Consider segments that are numbers or UUIDs as dynamic
     const uuidRegex = /^[0-9a-fA-F-]{36}$/;
     const numberRegex = /^\d+$/;
     return uuidRegex.test(segment) || numberRegex.test(segment);
   }
 
-
-  /**
-   * Retrieves all tools from the tools collection.
-   */
   public async deriveTools() {
-    const pairs = await this.db.network.find({
-      selector: {
-        responseStatus: { $gte: 200, $lt: 300 },
-        responseBody: { $exists: true }
-      }
-    }).exec();
+    return new Promise<StorableTool[]>((resolve, reject) => {
+      this.db.find({ responseStatus: { $gte: 200, $lt: 300 }, responseBody: { $exists: true } }, (err, pairs) => {
+        if (err) {
+          reject(err);
+        } else {
+          const collector = new EndpointCollector();
 
-    const collector = new EndpointCollector();
+          for (const pair of pairs) {
+            try {
+              collector.processEndpoint({
+                url: pair.url,
+                requestPayload: pair.requestBody,
+                responsePayload: pair.responseBody,
+                timestamp: pair.timestamp
+              });
+            } catch (error) {
+              console.log(`Error processing endpoint: ${pair.url}`, error);
+            }
+          }
 
-    for (const pair of pairs) {
-      try {
-        // const parsedResponseBody = JSON.parse(pair.responseBody);
-        collector.processEndpoint({
-          url: pair.url,
-          requestPayload: pair.requestBody,
-          responsePayload: pair.responseBody,
-          timestamp: pair.timestamp
-        });
-      } catch (error) {
-        console.log(`Error processing endpoint: ${pair.url}`, error);
-      }
-    }
-
-    const tools = collector.getTools().filter(tool => tool.endpoints.length > 1)
-
-    return tools;
+          const tools = collector.getTools().filter(tool => tool.endpoints.length > 1);
+          resolve(tools);
+        }
+      });
+    });
   }
 
   public async getTools() {
@@ -317,20 +231,23 @@ export class NetworkStore {
       tool.endpoints.map(async endpoint => {
         const crawlEntry = {
           urlHash: await this.hashString(endpoint.url),
-          url: endpoint.requestPayload ? endpoint.url + "\n" + JSON.stringify(endpoint.requestPayload) : endpoint.url, // this is for constructing POST json payloads next time
+          url: endpoint.requestPayload ? endpoint.url + "\n" + JSON.stringify(endpoint.requestPayload) : endpoint.url,
           contentHash: await this.hashString(endpoint.responsePayload),
           content: JSON.stringify({ url: endpoint.url, request: endpoint.requestPayload, response: endpoint.responsePayload }),
           depth: null,
           timestamp: endpoint.timestamp,
         };
 
-        try {
-          await this.db.crawls.upsert(crawlEntry);
-          return { success: true, url: endpoint.url };
-        } catch (error) {
-          console.error(`Failed to insert crawl for URL: ${endpoint.url}`, error);
-          return { success: false, url: endpoint.url, error: error.message };
-        }
+        return new Promise((resolve, reject) => {
+          this.db.update({ urlHash: crawlEntry.urlHash }, crawlEntry, { upsert: true }, (err) => {
+            if (err) {
+              console.error(`Failed to insert crawl for URL: ${endpoint.url}`, err);
+              resolve({ success: false, url: endpoint.url, error: err.message });
+            } else {
+              resolve({ success: true, url: endpoint.url });
+            }
+          });
+        });
       })
     );
 
@@ -348,5 +265,4 @@ export class NetworkStore {
 
     return tools;
   }
-
 }

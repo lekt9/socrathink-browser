@@ -128,7 +128,7 @@ export class ContextService {
             .sort((a, b) => b.timestamp - a.timestamp);
 
         // Combine the results
-        const result = [...sortedDepthNullEntries, ...top10Depth0, ...top10NonDepth0];
+        const result = [...top10Depth0, ...sortedDepthNullEntries, ...top10NonDepth0];
 
         console.log(`Returning ${result.length} entries (${sortedDepthNullEntries.length} depth null, ${top10Depth0.length} depth 0, ${top10NonDepth0.length} non-depth 0)`);
 
