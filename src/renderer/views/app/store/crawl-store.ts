@@ -22,7 +22,7 @@ export class CrawlStore {
     private static instance: CrawlStore;
     private db: Datastore;
     private requestCount: number = 0;
-    private readonly MAX_ITEMS = 2000;
+    private readonly MAX_ITEMS = 500;
 
     private constructor() {
         this.db = new Datastore({

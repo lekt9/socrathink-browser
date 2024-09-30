@@ -44,13 +44,7 @@ function extractLinksFromJson(json: any, baseUrl: string): string[] {
 
 export async function simpleFetch(url: string, options = {}): Promise<any> {
     try {
-        const parsedUrl = new URL(url);
-        let response;
-        if (parsedUrl.hostname === 'context.socrathink') {
-            response = await handleContextOmnidoraRequest(url, options);
-        } else {
-            response = await fetch(url, options);
-        }
+        const response = await fetch(url, options);
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -108,56 +102,8 @@ export async function parsePdf(pdfBuffer: ArrayBuffer): Promise<string> {
         console.error('Error parsing PDF:', error);
         throw error;
     }
+
 }
-async function webFetch(url: string, options: AuthFetchOptions = {}): Promise<any> {
-    let win: BrowserWindow | null = null;
-    try {
-        // Create a new browser window
-        win = new BrowserWindow({
-            width: 800,
-            height: 600,
-            show: false,
-            webPreferences: {
-                nodeIntegration: false,
-                contextIsolation: true,
-            },
-        });
-
-        // Set custom headers
-        if (options.headers) {
-            await session.defaultSession.webRequest.onBeforeSendHeaders(
-                { urls: [url] },
-                (details, callback) => {
-                    Object.assign(details.requestHeaders, options.headers);
-                    callback({ cancel: false, requestHeaders: details.requestHeaders });
-                }
-            );
-        }
-
-        if (url.includes('pdf')) {
-            console.log("Processing PDF URL");
-            const pdfResponse = await fetch(url, { headers: options.headers });
-            const pdfBuffer = await pdfResponse.arrayBuffer();
-            const pdfText = await parsePdf(pdfBuffer);
-            return { content: parseMarkdown(pdfText) };
-        } else {
-            console.log("Processing HTML");
-            await win.loadURL(url);
-            const content = await win.webContents.executeJavaScript('document.body.innerHTML');
-            return { content: parseMarkdown(content) };
-        }
-    } catch (error) {
-        console.error('Error in webFetch:', error);
-        return { content: '' };
-    } finally {
-        if (win) {
-            win.close();
-        }
-    }
-}
-// Update the hybridFetch function
-// @hybrid-fetch.ts
-
 export async function hybridFetch(url: string, options: AuthFetchOptions = {}): Promise<any> {
     try {
         const { content: simpleContent, links } = await simpleFetch(url, options);

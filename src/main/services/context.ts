@@ -105,7 +105,6 @@ export class ContextService {
 
     private async fetchContext(crawlStore: CrawlStore): Promise<StoredCrawlData[]> {
         const allEntries = await crawlStore.getAll();
-        console.log('allEntries', allEntries);
 
         // Filter and sort depth 0 entries by timestamp, most recent first
         const sortedDepth0Entries = allEntries
