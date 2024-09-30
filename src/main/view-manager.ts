@@ -198,6 +198,13 @@ export class ViewManager extends EventEmitter {
       if (sendMessage) {
         this.window.send('create-tab', { ...details }, isNext, id);
       }
+
+      // Automatically select the new tab if it's set to be active
+      if (details.active) {
+        this.select(id);
+      }
+
+      return view;
     } else {
       // For hidden tabs, we'll store them in a separate map
       if (!this.hiddenViews) {

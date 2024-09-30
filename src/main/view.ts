@@ -323,7 +323,11 @@ export class View {
       },
     );
 
-
+    this.webContents.setWindowOpenHandler(({ url }) => {
+      // Open the URL in a new tab instead of a new window
+      this.window.viewManager.create({ url, active: true });
+      return { action: 'deny' };
+    });
 
     this.webContents.addListener('media-started-playing', () => {
       this.emitEvent('media-playing', true);
