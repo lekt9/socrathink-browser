@@ -45,8 +45,9 @@ export class NetworkStore {
     return await sha256(str);
   }
 
-  public async addRequestToLog(details: { requestId: string; url: string; method: string; headers: Record<string, string>; body?: string; initiator: any }): Promise<StoredNetworkData | null> {
-    if (details.method.toUpperCase() !== 'GET') return null;
+  public async addRequestToLog(details: { requestId: string; url: string; method: string; headers: Record<string, string>; body?: string; initiator: any; type: string }): Promise<StoredNetworkData | null> {
+    // Only process XHR requests
+    if (details.type !== 'xhr') return null;
 
     const urlHash = await this.hashString(details.url);
     const urlObj = new URL(details.url);
@@ -77,9 +78,12 @@ export class NetworkStore {
       timestamp: Date.now(),
       parentUrlHash: details.initiator?.urlHash
     };
-
+    const currentCount = await this.size();
+    if (currentCount >= this.MAX_ITEMS) {
+      await this.removeOldestEntries(1);
+    }
     return new Promise((resolve, reject) => {
-      this.db.insert(newEntry, (err, doc) => {
+      this.db.insert(newEntry, (err: any, doc: StoredNetworkData) => {
         if (err) {
           console.error('Error adding network request to log:', err);
           reject(err);
@@ -102,7 +106,7 @@ export class NetworkStore {
       };
 
       return new Promise((resolve, reject) => {
-        this.db.update({ requestId: details.requestId }, { $set: updatedEntry }, {}, (err) => {
+        this.db.update({ requestId: details.requestId }, { $set: updatedEntry }, {}, (err: any) => {
           if (err) {
             console.error('Error updating network log with response:', err);
             reject(err);
@@ -119,7 +123,7 @@ export class NetworkStore {
 
   public async clearLogs(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.db.remove({}, { multi: true }, (err) => {
+      this.db.remove({}, { multi: true }, (err: any) => {
         if (err) {
           reject(err);
         } else {
@@ -131,7 +135,7 @@ export class NetworkStore {
 
   public async get(requestId: string): Promise<StoredNetworkData | null> {
     return new Promise((resolve, reject) => {
-      this.db.findOne({ requestId }, (err, doc) => {
+      this.db.findOne({ requestId }, (err: any, doc: StoredNetworkData) => {
         if (err) {
           reject(err);
         } else {
@@ -143,7 +147,7 @@ export class NetworkStore {
 
   public async has(requestId: string): Promise<boolean> {
     return new Promise((resolve, reject) => {
-      this.db.findOne({ requestId }, (err, doc) => {
+      this.db.findOne({ requestId }, (err: any, doc: any) => {
         if (err) {
           reject(err);
         } else {
@@ -155,7 +159,7 @@ export class NetworkStore {
 
   public async getAll(): Promise<StoredNetworkData[]> {
     return new Promise((resolve, reject) => {
-      this.db.find({}, (err, docs) => {
+      this.db.find({}, (err: any, docs: StoredNetworkData[]) => {
         if (err) {
           reject(err);
         } else {
@@ -167,7 +171,7 @@ export class NetworkStore {
 
   public async size(): Promise<number> {
     return new Promise((resolve, reject) => {
-      this.db.count({}, (err, count) => {
+      this.db.count({}, (err: any, count: number | PromiseLike<number>) => {
         if (err) {
           reject(err);
         } else {
@@ -198,7 +202,7 @@ export class NetworkStore {
 
   public async deriveTools() {
     return new Promise<StorableTool[]>((resolve, reject) => {
-      this.db.find({ responseStatus: { $gte: 200, $lt: 300 }, responseBody: { $exists: true } }, (err, pairs) => {
+      this.db.find({ responseStatus: { $gte: 200, $lt: 300 }, responseBody: { $exists: true } }, (err: any, pairs: any) => {
         if (err) {
           reject(err);
         } else {
@@ -209,7 +213,7 @@ export class NetworkStore {
               collector.processEndpoint({
                 url: pair.url,
                 requestPayload: pair.requestBody,
-                responsePayload: pair.responseBody,
+                responsePayload: pair.responseBody.slice(0, 30000),
                 timestamp: pair.timestamp
               });
             } catch (error) {
@@ -221,6 +225,29 @@ export class NetworkStore {
           resolve(tools);
         }
       });
+    });
+  }
+
+  private async removeOldestEntries(count: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.db.find({})
+        .sort({ timestamp: 1 })
+        .limit(count)
+        .exec((err: any, oldestEntries: any[]) => {
+          if (err) {
+            reject(err);
+          } else {
+            const oldestIds = oldestEntries.map((entry: { _id: any; }) => entry._id);
+            this.db.remove({ _id: { $in: oldestIds } }, { multi: true }, (removeErr: any, numRemoved: any) => {
+              if (removeErr) {
+                reject(removeErr);
+              } else {
+                console.log(`Removed ${numRemoved} oldest entries from the database.`);
+                resolve();
+              }
+            });
+          }
+        });
     });
   }
 
@@ -239,7 +266,7 @@ export class NetworkStore {
         };
 
         return new Promise((resolve, reject) => {
-          this.db.update({ urlHash: crawlEntry.urlHash }, crawlEntry, { upsert: true }, (err) => {
+          this.db.update({ urlHash: crawlEntry.urlHash }, crawlEntry, { upsert: true }, (err: { message: any; }) => {
             if (err) {
               console.error(`Failed to insert crawl for URL: ${endpoint.url}`, err);
               resolve({ success: false, url: endpoint.url, error: err.message });

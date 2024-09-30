@@ -4,6 +4,7 @@ import fetch from 'node-fetch';
 import { SerializableAuthInfo } from './context';
 import { parseMarkdown } from '~/utils/parse';
 import { PDFDocument } from 'pdf-lib';
+import { getTextExtractor } from 'office-text-extractor';
 
 const TIMEOUT = 10000; // 10 seconds timeout
 
@@ -19,14 +20,10 @@ const extractLinks = (content: string, baseUrl: string): string[] => {
     }
     return links;
 };
-async function parsePdf(pdfBuffer: ArrayBuffer): Promise<string> {
+async function parseDoc(pdfBuffer: ArrayBuffer): Promise<string> {
+    const extractor = getTextExtractor();
     try {
-        const pdfDoc = await PDFDocument.load(pdfBuffer);
-        const pages = pdfDoc.getPages();
-        let text = '';
-        for (const page of pages) {
-            text += await page.getText();
-        }
+        const text = await extractor.extractText({ input: Buffer.from(pdfBuffer), type: 'buffer' });
         return text;
     } catch (error) {
         console.error('Error parsing PDF:', error);
@@ -45,10 +42,13 @@ async function simpleFetch(url: string, options = {}): Promise<any> {
 
         const contentType = response.headers.get('content-type');
 
-        if (contentType && contentType.includes('application/pdf')) {
+        if (contentType.includes('application/pdf') ||
+            contentType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document') ||
+            contentType.includes('application/vnd.openxmlformats-officedocument.presentationml.presentation') ||
+            contentType.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
             console.log("Processing PDF URL");
             const pdfBuffer = await response.arrayBuffer();
-            const pdfText = await parsePdf(pdfBuffer);
+            const pdfText = await parseDoc(pdfBuffer);
             return { links: [], rawHtml: pdfText, content: parseMarkdown(pdfText) };
         } else {
             const content = await response.text();

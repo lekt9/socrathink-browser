@@ -6,7 +6,6 @@
   },
   "generateUpdatesFilesForAllChannels": true,
   "asar": true,
-  "mergeASARs": false,
   "directories": {
     "output": "dist",
     "buildResources": "static/icons"
@@ -132,7 +131,8 @@
         "from": "build/worker.bundle.js",
         "to": "Resources/worker.bundle.js"
       }
-    ]
+    ],
+    "mergeASARs": false
   },
   "fileAssociations": [
     {

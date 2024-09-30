@@ -58,8 +58,8 @@ export class ViewManager extends EventEmitter {
       this.crawlStore = store;
 
       this.pool = Pool(() => spawn<CrawlerWorker>(new Worker(workerPath)), {
-        size: 2,
-        concurrency: 2
+        size: 4,
+        concurrency: 4
       });
     });
 
