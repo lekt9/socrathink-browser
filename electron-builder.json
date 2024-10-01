@@ -1,5 +1,5 @@
 {
-  "appId": "com.the clarity project.socrathink",
+  "appId": "com.theclarityproject.socrathink",
   "productName": "Socrathink",
   "nsis": {
     "include": "static/installer.nsh"
@@ -16,13 +16,10 @@
     "static/**/*"
   ],
   "publish": [
-    "github",
     {
-      "provider": "snapStore",
-      "repo": "socrathink",
-      "channels": [
-        "stable"
-      ]
+      "provider": "github",
+      "owner": "The-Clarity-Projekt",
+      "repo": "socrathink-browser"
     }
   ],
   "deb": {
@@ -38,60 +35,6 @@
   "pacman": {
     "fpm": [
       "static/socrathink.metainfo.xml=/usr/share/metainfo/socrathink.metainfo.xml"
-    ]
-  },
-  "linux": {
-    "category": "Network",
-    "executableName": "socrathink",
-    "desktop": {
-      "Comment": "Browse the Web",
-      "GenericName": "Internet",
-      "StartupNotify": false,
-      "Categories": "Internet"
-    },
-    "target": [
-      {
-        "target": "AppImage",
-        "arch": [
-          "x64",
-          "arm64"
-        ]
-      },
-      {
-        "target": "deb",
-        "arch": [
-          "x64",
-          "arm64"
-        ]
-      },
-      {
-        "target": "rpm",
-        "arch": [
-          "x64",
-          "arm64"
-        ]
-      },
-      {
-        "target": "pacman",
-        "arch": [
-          "x64",
-          "arm64"
-        ]
-      },
-      {
-        "target": "tar.gz",
-        "arch": [
-          "x64",
-          "arm64"
-        ]
-      },
-      {
-        "target": "snap",
-        "arch": [
-          "x64",
-          "arm64"
-        ]
-      }
     ]
   },
   "win": {
@@ -116,7 +59,8 @@
         "from": "build/worker.bundle.js",
         "to": "resources/worker.bundle.js"
       }
-    ]
+    ],
+    "publish": ["github"]
   },
   "mac": {
     "category": "public.app-category.navigation",
@@ -132,7 +76,8 @@
         "to": "Resources/worker.bundle.js"
       }
     ],
-    "mergeASARs": false
+    "mergeASARs": false,
+    "publish": ["github"]
   },
   "fileAssociations": [
     {

@@ -25,7 +25,7 @@ export class QueueManager {
     private crawledHashes: Set<string> = new Set();
     private requestCount: number = 0;
     private urlDepthMap: Map<string, number> = new Map();
-    private readonly MAX_DEPTH = 1;
+    private readonly MAX_DEPTH = 3;
     private readonly MAX_CRAWLS: number = -1;
     private crawlCount: number = 0;
     private crawlStore: CrawlStore;
@@ -161,33 +161,57 @@ export class QueueManager {
     }
 
     private sortQueue(): void {
-        this.depth0UrlsToCrawl = this.sortQueueByDomain(this.depth0UrlsToCrawl);
-        this.otherUrlsToCrawl = this.sortQueueByDomain(this.otherUrlsToCrawl);
+        this.depth0UrlsToCrawl = this.sortQueueByDomainAndDepth(this.depth0UrlsToCrawl);
+        this.otherUrlsToCrawl = this.sortQueueByDomainAndDepth(this.otherUrlsToCrawl);
     }
 
-    private sortQueueByDomain(queue: string[]): string[] {
-        const domainMap: Map<string, string[]> = new Map();
+    private sortQueueByDomainAndDepth(queue: string[]): string[] {
+        const domainDepthMap: Map<string, Map<number, string[]>> = new Map();
 
         for (const url of queue) {
             const domain = new URL(url).hostname;
-            if (!domainMap.has(domain)) {
-                domainMap.set(domain, []);
+            const depth = this.urlDepthMap.get(url) || 0;
+
+            if (!domainDepthMap.has(domain)) {
+                domainDepthMap.set(domain, new Map());
             }
-            domainMap.get(domain)!.push(url);
+            const depthMap = domainDepthMap.get(domain)!;
+
+            if (!depthMap.has(depth)) {
+                depthMap.set(depth, []);
+            }
+            depthMap.get(depth)!.push(url);
         }
 
         const sortedQueue: string[] = [];
-        const domains = Array.from(domainMap.keys());
+        const domains = Array.from(domainDepthMap.keys());
+        let allDomainsEmpty = false;
 
-        while (domains.length > 0) {
-            for (let i = 0; i < domains.length; i++) {
-                const domain = domains[i];
-                const urls = domainMap.get(domain)!;
-                if (urls.length > 0) {
-                    sortedQueue.push(urls.shift()!);
-                } else {
-                    domains.splice(i, 1);
-                    i--;
+        while (!allDomainsEmpty) {
+            allDomainsEmpty = true;
+            for (const domain of domains) {
+                const depthMap = domainDepthMap.get(domain)!;
+                const depths = Array.from(depthMap.keys()).sort((a, b) => a - b);
+
+                for (const depth of depths) {
+                    const urls = depthMap.get(depth)!;
+                    if (urls.length > 0) {
+                        sortedQueue.push(urls.shift()!);
+                        allDomainsEmpty = false;
+                        break;
+                    }
+                }
+
+                // Remove empty depth entries
+                for (const [depth, urls] of depthMap.entries()) {
+                    if (urls.length === 0) {
+                        depthMap.delete(depth);
+                    }
+                }
+
+                // Remove empty domain entries
+                if (depthMap.size === 0) {
+                    domainDepthMap.delete(domain);
                 }
             }
         }

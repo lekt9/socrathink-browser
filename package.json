@@ -36,7 +36,9 @@
     "lint": "eslint \"src/**/*.ts*\" \"src/**/*.tsx*\"",
     "lint-fix": "npm run lint -- --fix",
     "rebuild": "electron-builder install-app-deps && electron-rebuild -f -w sqlite3",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "publish-only": "electron-builder --publish always",
+    "deploy": "git add . && git commit -m \"Pre-deploy commit\" || true && npm version patch && electron-builder build --mac --win --publish always"
   },
   "devDependencies": {
     "@babel/core": "^7.17.0",
