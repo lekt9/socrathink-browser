@@ -40,7 +40,7 @@ const getInput = (name) => {
         name: 'socrathink-nightly',
         repository: {
           type: 'git',
-          url: 'git+https://github.com/omnidorabrowser/socrathink.git',
+          url: 'git+https://github.com/the-clarity-projekt/socrathink-browser.git',
         },
       };
       await promises.writeFile(

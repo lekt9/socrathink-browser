@@ -16,10 +16,10 @@
   "author": "The Clarity Project LLC <contact@theclarityproject.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/omnidorabrowser/socrathink.git"
+    "url": "git+https://github.com/the-clarity-projekt/socrathink-browser.git"
   },
   "bugs": {
-    "url": "https://github.com/omnidorabrowser/socrathink/issues"
+    "url": "https://github.com/the-clarity-projekt/socrathink-browser/issues"
   },
   "scripts": {
     "dev-renderer": "cross-env DEV=1 webpack serve --config webpack.config.renderer.js",
