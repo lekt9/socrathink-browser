@@ -16,13 +16,10 @@
     "static/**/*"
   ],
   "publish": [
-    "github",
     {
-      "provider": "snapStore",
-      "repo": "socrathink",
-      "channels": [
-        "stable"
-      ]
+      "provider": "github",
+      "owner": "The-Clarity-Projekt",
+      "repo": "socrathink-browser"
     }
   ],
   "deb": {
@@ -92,7 +89,8 @@
           "arm64"
         ]
       }
-    ]
+    ],
+    "publish": ["github"]
   },
   "win": {
     "target": [
@@ -116,14 +114,18 @@
         "from": "build/worker.bundle.js",
         "to": "resources/worker.bundle.js"
       }
-    ]
+    ],
+    "publish": ["github"]
   },
   "mac": {
     "category": "public.app-category.navigation",
     "target": [
       {
         "target": "default",
-        "arch": "universal"
+        "arch": [
+          "x64",
+          "arm64"
+        ]
       }
     ],
     "extraFiles": [
@@ -132,7 +134,8 @@
         "to": "Resources/worker.bundle.js"
       }
     ],
-    "mergeASARs": false
+    "mergeASARs": false,
+    "publish": ["github"]
   },
   "fileAssociations": [
     {

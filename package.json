@@ -16,7 +16,7 @@
   "author": "The Clarity Project LLC <contact@theclarityproject.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/omnidorabrowser/socrathink.git"
+    "url": "https://github.com/The-Clarity-Projekt/socrathink-browser.git"
   },
   "bugs": {
     "url": "https://github.com/omnidorabrowser/socrathink/issues"
@@ -26,7 +26,8 @@
     "dev-webpack": "cross-env DEV=1 webpack",
     "build-renderer": "webpack --config webpack.config.renderer.js",
     "dev": "cross-env START=1 npm run watch",
-    "build": "rimraf build && concurrently \"npm run build-renderer\" \"webpack\"",
+    "build": "electron-builder build --mac --win --linux --publish never",
+    "deploy": "git add . && git commit -m \"Pre-deploy commit\" || true && npm version patch && electron-builder build --mac --win --linux --publish always",
     "ci-build": "node scripts/ci-build.js",
     "start": "electron .",
     "watch": "concurrently \"npm run dev-renderer\" \"npm run dev-webpack\"",
@@ -69,7 +70,7 @@
     "electron": "^31.3.1",
     "electron-builder": "^24.13.3",
     "electron-rebuild": "^3.2.9",
-    "electron-updater": "4.6.1",
+    "electron-updater": "6.3.4",
     "eslint": "^8.8.0",
     "eslint-config-prettier": "^8.2.0",
     "eslint-plugin-prettier": "^4.0.0",
@@ -130,6 +131,7 @@
     "cross-fetch": "^4.0.0",
     "crypto-browserify": "^3.12.0",
     "electron-debug": "^4.0.0",
+    "electron-log": "^5.2.0",
     "fast-average-color": "^7.0.1",
     "fuzzysort": "^3.0.2",
     "genson-js": "^0.0.8",
