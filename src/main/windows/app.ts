@@ -1,24 +1,13 @@
-import {
-  initialize,
-  SessionManager,
-  DecodingOptionsBuilder,
-  Segment,
-  AvailableModels,
-} from "whisper-turbo";
 
-import * as path from 'path';
-import { desktopCapturer } from 'electron';
 import { BrowserView, BrowserWindow, app, dialog, ipcMain, session } from 'electron';
 import { writeFileSync, promises } from 'fs';
 import { resolve, join } from 'path';
 import "threads/register";
-import { writeFile } from 'fs/promises';
 import { getPath } from '~/utils';
 import { runMessagingService } from '../services';
 import { Application } from '../application';
 import { isNightly } from '..';
 import { ViewManager } from '../view-manager';
-import { autoUpdater } from 'electron-updater';
 
 export class AppWindow {
   public win: BrowserWindow;
@@ -228,8 +217,6 @@ export class AppWindow {
     ipcMain.on('resize-attached-view', (_, newWidth: number) => {
       this.resizeAttachedView(newWidth);
     });
-
-    this.setupAutoUpdater();
   }
 
   private createAttachedView() {
@@ -257,7 +244,6 @@ export class AppWindow {
     });
 
     this.attachedView.webContents.loadURL('https://app.socrathink.com');
-    // this.attachedView.webContents.loadURL('http://localhost:3000');
 
     // Enable remote module for the attached view
     require('@electron/remote/main').enable(this.attachedView.webContents);
@@ -364,52 +350,5 @@ export class AppWindow {
         ? app.name
         : `${selected.title} - ${app.name}`,
     );
-  }
-
-  private setupAutoUpdater() {
-    autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.setFeedURL({
-      provider: 'github',
-      owner: 'The-Clarity-Projekt',
-      repo: 'socrathink-browser',
-    })
-    autoUpdater.on('error', (error) => {
-      dialog.showErrorBox('Error: ', error == null ? "unknown" : (error.stack || error).toString());
-    });
-
-    autoUpdater.on('update-available', () => {
-      dialog.showMessageBox({
-        type: 'info',
-        title: 'Update Available',
-        message: 'A new version of Socrathink is available. Do you want to download it now?',
-        buttons: ['Yes', 'No']
-      }).then((result) => {
-        if (result.response === 0) {
-          autoUpdater.downloadUpdate();
-        }
-      });
-    });
-
-    autoUpdater.on('update-downloaded', () => {
-      dialog.showMessageBox({
-        type: 'info',
-        title: 'Update Ready',
-        message: 'Install and restart now?',
-        buttons: ['Yes', 'Later']
-      }).then((result) => {
-        if (result.response === 0) {
-          autoUpdater.quitAndInstall(false, true);
-        }
-      });
-    });
-
-    // Check for updates every hour
-    setInterval(() => {
-      autoUpdater.checkForUpdates();
-    }, 60 * 60 * 1000);
-
-    // Check for updates on app start
-    autoUpdater.checkForUpdates();
   }
 }

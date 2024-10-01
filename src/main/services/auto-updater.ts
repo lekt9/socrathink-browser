@@ -4,7 +4,13 @@ import { Application } from '../application';
 
 export const runAutoUpdaterService = () => {
   let updateAvailable = false;
-
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.setFeedURL({
+    provider: 'github',
+    owner: 'The-Clarity-Projekt',
+    repo: 'socrathink-browser',
+  })
   ipcMain.on('install-update', () => {
     if (process.env.NODE_ENV !== 'development') {
       autoUpdater.quitAndInstall(true, true);

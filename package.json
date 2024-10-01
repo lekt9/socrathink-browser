@@ -1,6 +1,6 @@
 {
   "name": "socrathink",
-  "version": "1.0.11",
+  "version": "1.0.10",
   "sideEffects": false,
   "description": "Extensible, fast and innovative web browser with The Clarity Project UI.",
   "keywords": [
@@ -16,10 +16,10 @@
   "author": "The Clarity Project LLC <contact@theclarityproject.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/the-clarity-projekt/socrathink-browser.git"
+    "url": "git+https://github.com/The-Clarity-Projekt/socrathink-browser.git"
   },
   "bugs": {
-    "url": "https://github.com/the-clarity-projekt/socrathink-browser/issues"
+    "url": "https://github.com/The-Clarity-Projekt/socrathink-browser/issues"
   },
   "scripts": {
     "dev-renderer": "cross-env DEV=1 webpack serve --config webpack.config.renderer.js",
