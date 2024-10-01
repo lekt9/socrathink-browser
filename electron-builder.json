@@ -37,6 +37,22 @@
       "static/socrathink.metainfo.xml=/usr/share/metainfo/socrathink.metainfo.xml"
     ]
   },
+  "linux": {
+    "target": [
+      "AppImage",
+      "deb",
+      "rpm",
+      "pacman"
+    ],
+    "category": "Network",
+    "executableName": "socrathink",
+    "desktop": {
+      "Name": "Socrathink",
+      "Comment": "Socrathink Browser",
+      "Categories": "Network;WebBrowser;"
+    },
+    "publish": ["github"]
+  },
   "win": {
     "target": [
       {
