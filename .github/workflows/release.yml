@@ -1,0 +1,42 @@
+name: Release
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+      - run: npm ci
+      - name: Bump version
+        run: npm version patch -m "Bump version to %s"
+      - name: Push changes
+        run: git push --follow-tags
+      - name: Build
+        run: npm run build
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.package-version.outputs.version }}
+          release_name: Release ${{ steps.package-version.outputs.version }}
+          draft: false
+          prerelease: false
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dist/socrathink-${{ steps.package-version.outputs.version }}.AppImage
+          asset_name: socrathink-${{ steps.package-version.outputs.version }}.AppImage
+          asset_content_type: application/octet-stream
