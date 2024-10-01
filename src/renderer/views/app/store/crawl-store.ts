@@ -60,7 +60,6 @@ export class CrawlStore {
                 await this.removeOldestEntries(1);
             }
 
-            console.log('Adding entry:', newEntry);
 
             return new Promise((resolve, reject) => {
                 this.db.insert(newEntry, (err) => {
