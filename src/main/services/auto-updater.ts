@@ -4,7 +4,7 @@ import { Application } from '../application';
 
 export const runAutoUpdaterService = () => {
   let updateAvailable = false;
-  autoUpdater.autoDownload = false;
+  autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.setFeedURL({
     provider: 'github',
