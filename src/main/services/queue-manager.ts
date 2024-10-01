@@ -20,17 +20,15 @@ export interface CrawledData {
 }
 
 export class QueueManager {
-    private depth0UrlsToCrawl: string[] = [];
-    private otherUrlsToCrawl: string[] = [];
+    private urlQueue: { url: string; depth: number; timestamp: number }[] = [];
     private crawledHashes: Set<string> = new Set();
-    private requestCount: number = 0;
-    private urlDepthMap: Map<string, number> = new Map();
-    private readonly MAX_DEPTH = 3;
-    private readonly MAX_CRAWLS: number = -1;
     private crawlCount: number = 0;
     private crawlStore: CrawlStore;
     private pool: Pool<CrawlerWorker>;
     private isProcessing: boolean = false;
+
+    private readonly MAX_DEPTH = 3;
+    private readonly MAX_CRAWLS: number = -1;
 
     private allowedContentTypes: Set<string> = new Set([
         'text/html',
@@ -61,15 +59,9 @@ export class QueueManager {
 
         const urlHash = await this.hashString(url);
 
-        if (!this.crawledHashes.has(urlHash) &&
-            !this.depth0UrlsToCrawl.includes(url) &&
-            !this.otherUrlsToCrawl.includes(url)) {
-            if (depth === 0) {
-                this.depth0UrlsToCrawl.push(url);
-            } else {
-                this.otherUrlsToCrawl.push(url);
-            }
-            this.urlDepthMap.set(url, depth);
+        if (!this.crawledHashes.has(urlHash) && !this.urlQueue.some(item => item.url === url)) {
+            this.urlQueue.push({ url, depth, timestamp: Date.now() });
+            this.sortQueue();
 
             if (!this.isProcessing) {
                 this.processQueue();
@@ -77,24 +69,32 @@ export class QueueManager {
         }
     }
 
+    private sortQueue(): void {
+        this.urlQueue.sort((a, b) => {
+            if (a.depth !== b.depth) {
+                return a.depth - b.depth; // Lower depth first
+            }
+            return b.timestamp - a.timestamp; // Newer timestamp first
+        });
+    }
+
     private async processQueue(): Promise<void> {
         this.isProcessing = true;
         while (this.crawlCount < this.MAX_CRAWLS || this.MAX_CRAWLS === -1) {
-            if (this.isEmpty()) {
+            if (this.urlQueue.length === 0) {
                 this.isProcessing = false;
                 return;
             }
-            const url = this.dequeue();
-            if (url) {
+            this.sortQueue()
+            const item = this.urlQueue.shift();
+            if (item) {
                 try {
-                    const depth = this.urlDepthMap.get(url) || 0;
-                    const authInfo: SerializableAuthInfo = await getAuthInfo(url);
-                    // console.log({ pool: this.pool });
-                    const result = await this.pool.queue(worker => worker.crawlUrl(authInfo, depth));
+                    const authInfo: SerializableAuthInfo = await getAuthInfo(item.url);
+                    const result = await this.pool.queue(worker => worker.crawlUrl(authInfo, item.depth));
                     await this.handleCrawlResult(result);
                 } catch (error) {
-                    console.error(`Error processing URL: ${url}`, error);
-                    this.handleFailedCrawl(url);
+                    console.error(`Error processing URL: ${item.url}`, error);
+                    this.handleFailedCrawl(item.url);
                 }
                 this.crawlCount++;
             }
@@ -104,7 +104,6 @@ export class QueueManager {
 
     private async handleCrawlResult(result: CrawledData) {
         const { url, rawHtml, content, links, depth } = result;
-        // console.log({ rawHtml, content })
         if (rawHtml && content) {
             await this.crawlStore.add(url, rawHtml, content, depth);
         }
@@ -116,107 +115,12 @@ export class QueueManager {
         console.log(`Processed URL: ${url}, extracted ${links.length} links, depth: ${depth}`);
     }
 
-    private isAllowedContentType(contentType: string): boolean {
-        return Array.from(this.allowedContentTypes).some(allowed => contentType.startsWith(allowed));
-    }
-
-    public dequeue(): string | undefined {
-        this.requestCount++;
-        if (this.requestCount % 10 === 0) {
-            this.sortQueue();
-        }
-
-        if (this.depth0UrlsToCrawl.length > 0) {
-            return this.depth0UrlsToCrawl.shift();
-        } else {
-            return this.otherUrlsToCrawl.shift();
-        }
-    }
-
-    public isEmpty(): boolean {
-        return this.depth0UrlsToCrawl.length === 0 && this.otherUrlsToCrawl.length === 0;
-    }
-
-    public async markAsCrawled(url: string): Promise<void> {
-        const urlHash = await this.hashString(url);
-        this.crawledHashes.add(urlHash);
-    }
-
-    public handleFailedCrawl(url: string): void {
+    private handleFailedCrawl(url: string): void {
         const urlObj = new URL(url);
         const domain = urlObj.hostname;
-
-        this.depth0UrlsToCrawl = this.moveFailedDomainToEnd(this.depth0UrlsToCrawl, domain);
-        this.otherUrlsToCrawl = this.moveFailedDomainToEnd(this.otherUrlsToCrawl, domain);
-    }
-
-    private moveFailedDomainToEnd(queue: string[], domain: string): string[] {
-        return queue.filter(u => {
-            if (new URL(u).hostname === domain) {
-                queue.push(u);
-                return false;
-            }
-            return true;
-        });
-    }
-
-    private sortQueue(): void {
-        this.depth0UrlsToCrawl = this.sortQueueByDomainAndDepth(this.depth0UrlsToCrawl);
-        this.otherUrlsToCrawl = this.sortQueueByDomainAndDepth(this.otherUrlsToCrawl);
-    }
-
-    private sortQueueByDomainAndDepth(queue: string[]): string[] {
-        const domainDepthMap: Map<string, Map<number, string[]>> = new Map();
-
-        for (const url of queue) {
-            const domain = new URL(url).hostname;
-            const depth = this.urlDepthMap.get(url) || 0;
-
-            if (!domainDepthMap.has(domain)) {
-                domainDepthMap.set(domain, new Map());
-            }
-            const depthMap = domainDepthMap.get(domain)!;
-
-            if (!depthMap.has(depth)) {
-                depthMap.set(depth, []);
-            }
-            depthMap.get(depth)!.push(url);
-        }
-
-        const sortedQueue: string[] = [];
-        const domains = Array.from(domainDepthMap.keys());
-        let allDomainsEmpty = false;
-
-        while (!allDomainsEmpty) {
-            allDomainsEmpty = true;
-            for (const domain of domains) {
-                const depthMap = domainDepthMap.get(domain)!;
-                const depths = Array.from(depthMap.keys()).sort((a, b) => a - b);
-
-                for (const depth of depths) {
-                    const urls = depthMap.get(depth)!;
-                    if (urls.length > 0) {
-                        sortedQueue.push(urls.shift()!);
-                        allDomainsEmpty = false;
-                        break;
-                    }
-                }
-
-                // Remove empty depth entries
-                for (const [depth, urls] of depthMap.entries()) {
-                    if (urls.length === 0) {
-                        depthMap.delete(depth);
-                    }
-                }
-
-                // Remove empty domain entries
-                if (depthMap.size === 0) {
-                    domainDepthMap.delete(domain);
-                }
-            }
-        }
-
-        return sortedQueue;
+        this.urlQueue = this.urlQueue.filter(item => new URL(item.url).hostname !== domain);
+        this.urlQueue.push({ url, depth: this.MAX_DEPTH, timestamp: Date.now() });
+        this.sortQueue();
     }
 
     private async hashString(str: string): Promise<string> {

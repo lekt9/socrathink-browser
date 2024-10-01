@@ -212,6 +212,8 @@ export class Application {
       if (this.windows.list.filter((x) => x !== null).length === 0) {
         this.windows.open();
       }
+      ipcMain.emit('update-check');
+
     });
   }
 }

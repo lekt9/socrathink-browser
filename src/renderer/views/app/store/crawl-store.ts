@@ -11,18 +11,13 @@ export interface StoredCrawlData {
     timestamp: number;
     content?: string;
     depth: number;
-}
-
-export interface DomainStatus {
-    domain: string;
-    isCompleted: boolean;
+    ingested: boolean; // New field
 }
 
 export class CrawlStore {
     private static instance: CrawlStore;
     private db: Datastore;
-    private requestCount: number = 0;
-    private readonly MAX_ITEMS = 500;
+    private readonly MAX_ITEMS = 2000;
 
     private constructor() {
         this.db = new Datastore({
@@ -38,30 +33,14 @@ export class CrawlStore {
         return CrawlStore.instance;
     }
 
-    private getDomainFromUrl(url: string): string {
-        return new URL(url).hostname;
-    }
-
-    private stripQueryParams(url: string): string {
-        try {
-            const urlObj = new URL(url);
-            return `${urlObj.protocol}//${urlObj.host}${urlObj.pathname}`;
-        }
-        catch {
-            return url;
-        }
-    }
-
     private async hashString(str: string): Promise<string> {
         return await sha256(str);
     }
 
-    public async add(url: string, rawHtml: string, content: string, depth: number, jsonResponse?: object): Promise<boolean> {
+    public async add(url: string, rawHtml: string, content: string, depth: number): Promise<boolean> {
         if (!isContentUseful(content)) return false;
-        const domain = this.getDomainFromUrl(url);
-        if (!domain) return false;
 
-        const { strippedUrl, params } = extractQueryParams(url);
+        const { strippedUrl } = extractQueryParams(url);
         const contentHash = await this.hashString(content);
         const urlHash = await this.hashString(strippedUrl);
 
@@ -73,12 +52,15 @@ export class CrawlStore {
                 timestamp: Date.now(),
                 content: content,
                 depth: depth,
+                ingested: false, // Initialize as not ingested
             };
 
             const currentCount = await this.size();
             if (currentCount >= this.MAX_ITEMS) {
                 await this.removeOldestEntries(1);
             }
+
+            console.log('Adding entry:', newEntry);
 
             return new Promise((resolve, reject) => {
                 this.db.insert(newEntry, (err) => {
@@ -93,6 +75,33 @@ export class CrawlStore {
             console.error("Error adding entry:", error);
             return false;
         }
+    }
+
+    public async markAsIngested(url: string): Promise<boolean> {
+        const { strippedUrl } = extractQueryParams(url);
+        const urlHash = await this.hashString(strippedUrl);
+
+        return new Promise((resolve, reject) => {
+            this.db.update({ urlHash }, { $set: { ingested: true } }, {}, (err, numReplaced) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(numReplaced > 0);
+                }
+            });
+        });
+    }
+
+    public async getUnIngested(): Promise<StoredCrawlData[]> {
+        return new Promise((resolve, reject) => {
+            this.db.find({ ingested: false }, (err, docs) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(docs as StoredCrawlData[]);
+                }
+            });
+        });
     }
 
     private async removeOldestEntries(count: number): Promise<void> {

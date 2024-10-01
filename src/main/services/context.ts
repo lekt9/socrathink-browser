@@ -101,13 +101,35 @@ export class ContextService {
                 };
             }
         });
+
+        // New IPC handler for marking a URL as ingested
+        ipcMain.handle('mark-as-ingested', async (event, url: string) => {
+            try {
+                const crawlStore = await CrawlStore.getInstance();
+                const result = await crawlStore.markAsIngested(url);
+                return {
+                    ok: true,
+                    status: 200,
+                    data: result,
+                };
+            } catch (error) {
+                console.error('Mark as ingested error:', error);
+                return {
+                    ok: false,
+                    status: 500,
+                    data: 'Internal server error',
+                };
+            }
+        });
     }
 
     private async fetchContext(crawlStore: CrawlStore): Promise<StoredCrawlData[]> {
-        const allEntries = await crawlStore.getAll();
+        const unIngestedEntries = await crawlStore.getUnIngested();
+
+        console.log('Uningested entries:', unIngestedEntries.length);
 
         // Filter and sort depth 0 entries by timestamp, most recent first
-        const sortedDepth0Entries = allEntries
+        const sortedDepth0Entries = unIngestedEntries
             .filter(entry => entry.depth === 0)
             .sort((a, b) => b.timestamp - a.timestamp);
 
@@ -115,14 +137,14 @@ export class ContextService {
         const top10Depth0 = sortedDepth0Entries;
 
         // Filter and sort non-depth 0 entries by timestamp, most recent first
-        const sortedNonDepth0Entries = allEntries
-            .filter(entry => entry.depth !== 0)
+        const sortedNonDepth0Entries = unIngestedEntries
+            .filter(entry => entry.depth !== 0 && entry.depth !== null)
             .sort((a, b) => b.timestamp - a.timestamp);
 
         // Get the top 10 non-depth 0 entries
         const top10NonDepth0 = sortedNonDepth0Entries;
 
-        const sortedDepthNullEntries = allEntries
+        const sortedDepthNullEntries = unIngestedEntries
             .filter(entry => entry.depth === null)
             .sort((a, b) => b.timestamp - a.timestamp);
 

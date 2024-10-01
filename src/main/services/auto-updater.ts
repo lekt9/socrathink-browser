@@ -23,6 +23,7 @@ export const runAutoUpdaterService = () => {
 
   ipcMain.on('update-check', async () => {
     try {
+      console.log('Checking for updates...');
       await autoUpdater.checkForUpdates();
     } catch (e) {
       console.error(e);

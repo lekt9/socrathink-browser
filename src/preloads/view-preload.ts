@@ -29,6 +29,7 @@ declare global {
     removeHistory?: (ids: string[]) => void;
     getTopSites?: (count: number) => Promise<any>;
     updateSettings?: (data: any) => void;
+    markAsIngested: (url: string) => Promise<any>;
   }
 }
 
@@ -54,6 +55,10 @@ contextBridge.exposeInMainWorld('embed', {
 contextBridge.exposeInMainWorld('getTools', async () => { // Exposed getTools
   return ipcRenderer.invoke('get-tools');
 });
+contextBridge.exposeInMainWorld('markAsIngested', async (url: string) => {
+  return ipcRenderer.invoke('mark-as-ingested', url);
+});
+
 const goBack = async () => {
   await ipcRenderer.invoke(`web-contents-call`, {
     webContentsId: tabId,
