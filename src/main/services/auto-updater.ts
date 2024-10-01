@@ -1,5 +1,5 @@
 import { autoUpdater } from 'electron-updater';
-import { ipcMain, dialog, app } from 'electron';
+import { ipcMain, dialog } from 'electron';
 import { Application } from '../application';
 
 export const runAutoUpdaterService = () => {
