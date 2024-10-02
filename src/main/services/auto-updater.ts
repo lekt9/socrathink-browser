@@ -33,6 +33,7 @@ export const runAutoUpdaterService = () => {
   });
 
   autoUpdater.on('update-not-available', () => {
+    showUpdateDialog('No Update Available', 'You are running the latest version of Socrathink Browser.');
   });
 
   autoUpdater.on('update-available', () => {
