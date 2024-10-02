@@ -50,7 +50,7 @@ export class CrawlStore {
                 url: strippedUrl,
                 contentHash,
                 timestamp: Date.now(),
-                content: content,
+                content: content.slice(0, 200000), // cap to a max length
                 depth: depth,
                 ingested: false, // Initialize as not ingested
             };

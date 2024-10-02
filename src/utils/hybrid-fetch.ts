@@ -42,9 +42,16 @@ function extractLinksFromJson(json: any, baseUrl: string): string[] {
     return [...new Set(links)]; // Remove duplicates
 }
 
+const TIMEOUT = 1000; // 0.5 seconds timeout
+
 export async function simpleFetch(url: string, options = {}): Promise<any> {
     try {
-        const response = await fetch(url, options);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
+
+        const response = await fetch(url, { ...options, signal: controller.signal });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -88,7 +95,11 @@ export async function simpleFetch(url: string, options = {}): Promise<any> {
             return { links: [], content: '' };
         }
     } catch (error) {
-        console.error('Error in simpleFetch:', error);
+        if (error.name === 'AbortError') {
+            console.error('Request timed out');
+        } else {
+            console.error('Error in simpleFetch:', error);
+        }
         return { links: [], content: '' };
     }
 }
@@ -102,14 +113,14 @@ export async function parsePdf(pdfBuffer: ArrayBuffer): Promise<string> {
         console.error('Error parsing PDF:', error);
         throw error;
     }
-
 }
+
 export async function hybridFetch(url: string, options: AuthFetchOptions = {}): Promise<any> {
     try {
         const { content: simpleContent, links } = await simpleFetch(url, options);
         return { content: simpleContent, links };
     } catch (error) {
         console.error('Error in hybridFetch:', error);
-        return { content: null, links: [] };
+        return { content: '', links: [] };
     }
 }
