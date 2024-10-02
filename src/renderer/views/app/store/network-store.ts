@@ -20,6 +20,7 @@ export interface StoredNetworkData {
   contentHash: string;
   timestamp: number;
   parentUrlHash?: string;
+  type: string;
 }
 
 export class NetworkStore {
@@ -29,7 +30,7 @@ export class NetworkStore {
 
   private constructor() {
     this.db = new Datastore({
-      filename: getPath('storage/network.db'),
+      filename: getPath('storage/actions.db'),
       autoload: true,
     });
   }
@@ -47,7 +48,7 @@ export class NetworkStore {
 
   public async addRequestToLog(details: { requestId: string; url: string; method: string; headers: Record<string, string>; body?: string; initiator: any; type: string }): Promise<StoredNetworkData | null> {
     // Only process XHR requests
-    if (details.type !== 'xhr') return null;
+    if (details.type !== 'XHR' && details.type !== 'Fetch') return null;
 
     const urlHash = await this.hashString(details.url);
     const urlObj = new URL(details.url);
@@ -85,7 +86,6 @@ export class NetworkStore {
     return new Promise((resolve, reject) => {
       this.db.insert(newEntry, (err: any, doc: StoredNetworkData) => {
         if (err) {
-          console.error('Error adding network request to log:', err);
           reject(err);
         } else {
           resolve(doc as StoredNetworkData);
@@ -207,6 +207,7 @@ export class NetworkStore {
           reject(err);
         } else {
           const collector = new EndpointCollector();
+          console.log('Processing', pairs.length, 'pairs');
 
           for (const pair of pairs) {
             try {
@@ -216,12 +217,14 @@ export class NetworkStore {
                 responsePayload: pair.responseBody.slice(0, 30000),
                 timestamp: pair.timestamp
               });
+              console.log(`Processed endpoint: ${pair.url}`);
             } catch (error) {
               console.log(`Error processing endpoint: ${pair.url}`, error);
             }
           }
 
           const tools = collector.getTools().filter(tool => tool.endpoints.length > 1);
+          console.log(`Found ${tools.length} tools`);
           resolve(tools);
         }
       });

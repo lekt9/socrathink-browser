@@ -68,7 +68,8 @@ export class DevToolsCrawler {
     }
 
     private async handleRequest(params: any) {
-        const { requestId, request, initiator } = params;
+        // console.log('Handling request', params);
+        const { requestId, request, initiator, type } = params;
         const { url, method, headers, postData } = request;
 
         // Add request to NetworkStore and retrieve the stored entry
@@ -78,7 +79,8 @@ export class DevToolsCrawler {
             method,
             headers,
             body: postData,
-            initiator
+            initiator,
+            type
         });
 
         if (storedEntry) {

@@ -85,6 +85,7 @@ export class ContextService {
         // New IPC handler for retrieving tools
         ipcMain.handle('get-tools', async (event) => {
             try {
+                console.log('Getting tools');
                 const networkStore = await NetworkStore.getInstance();
                 const tools = await networkStore.getTools();
                 return {
