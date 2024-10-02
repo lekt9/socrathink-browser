@@ -126,33 +126,90 @@ export class ContextService {
 
     private async fetchContext(crawlStore: CrawlStore): Promise<StoredCrawlData[]> {
         const unIngestedEntries = await crawlStore.getUnIngested();
-
         console.log('Uningested entries:', unIngestedEntries.length);
 
-        // Filter and sort depth 0 entries by timestamp, most recent first
-        const sortedDepth0Entries = unIngestedEntries
-            .filter(entry => entry.depth === 0)
-            .sort((a, b) => b.timestamp - a.timestamp);
+        const MAX_ITEMS_TO_INGEST = 100;
 
-        // Get the top 10 depth 0 entries
-        const top10Depth0 = sortedDepth0Entries;
+        // Filter out entries with null content
+        const validEntries = unIngestedEntries.filter(item => item.content !== null);
 
-        // Filter and sort non-depth 0 entries by timestamp, most recent first
-        const sortedNonDepth0Entries = unIngestedEntries
-            .filter(entry => entry.depth !== 0 && entry.depth !== null)
-            .sort((a, b) => a.timestamp - b.timestamp);
+        // Sort entries
+        const sortedEntries = validEntries.sort((a, b) => {
+            if (a.depth === null && b.depth === null) return 0;
+            if (a.depth === null) return -1;
+            if (b.depth === null) return 1;
+            if (a.depth !== b.depth) {
+                return a.depth - b.depth; // Sort by depth (lowest first)
+            }
 
-        // Get the top 10 non-depth 0 entries
-        const top10NonDepth0 = sortedNonDepth0Entries;
+            const isPdfA = a.url.includes('/pdf') || a.url.includes('.pdf');
+            const isPdfB = b.url.includes('/pdf') || b.url.includes('.pdf');
 
-        const sortedDepthNullEntries = unIngestedEntries
-            .filter(entry => entry.depth === null)
-            .sort((a, b) => b.timestamp - a.timestamp);
+            if (isPdfA && !isPdfB) return -1;
+            if (!isPdfA && isPdfB) return 1;
 
-        // Combine the results
-        const result = [...top10Depth0, ...sortedDepthNullEntries, ...top10NonDepth0];
+            return 0;
+        });
 
-        console.log(`Returning ${result.length} entries (${sortedDepthNullEntries.length} depth null, ${top10Depth0.length} depth 0, ${top10NonDepth0.length} non-depth 0)`);
+        // Density-based clustering for sessions
+        const EPSILON = 5 * 60 * 1000; // 5 minutes in milliseconds
+        const MIN_POINTS = 2; // Minimum number of points to form a cluster
+
+        function dbscan(items: StoredCrawlData[]): Array<StoredCrawlData[]> {
+            const clusters: Array<StoredCrawlData[]> = [];
+            const visited = new Set<number>();
+
+            function expandCluster(point: StoredCrawlData, neighbors: StoredCrawlData[], cluster: StoredCrawlData[]) {
+                cluster.push(point);
+
+                for (let i = 0; i < neighbors.length; i++) {
+                    const neighborIndex = items.indexOf(neighbors[i]);
+                    if (!visited.has(neighborIndex)) {
+                        visited.add(neighborIndex);
+                        const newNeighbors = getNeighbors(neighbors[i]);
+                        if (newNeighbors.length >= MIN_POINTS) {
+                            neighbors.push(...newNeighbors);
+                        }
+                    }
+
+                    if (!cluster.includes(neighbors[i])) {
+                        cluster.push(neighbors[i]);
+                    }
+                }
+            }
+
+            function getNeighbors(point: StoredCrawlData): StoredCrawlData[] {
+                return items.filter(p => Math.abs(p.timestamp - point.timestamp) <= EPSILON);
+            }
+
+            for (let i = 0; i < items.length; i++) {
+                if (visited.has(i)) continue;
+
+                visited.add(i);
+                const neighbors = getNeighbors(items[i]);
+
+                if (neighbors.length < MIN_POINTS) {
+                    clusters.push([items[i]]); // Noise points form their own clusters
+                } else {
+                    const cluster: StoredCrawlData[] = [];
+                    expandCluster(items[i], neighbors, cluster);
+                    clusters.push(cluster);
+                }
+            }
+
+            return clusters;
+        }
+
+        const sessions = dbscan(sortedEntries);
+
+        // Sort sessions by most recent first, then sort items within each session by oldest first
+        sessions.sort((a, b) => Math.max(...b.map(item => item.timestamp)) - Math.max(...a.map(item => item.timestamp)));
+        sessions.forEach(session => session.sort((a, b) => a.timestamp - b.timestamp));
+
+        // Flatten the sorted sessions back into a single array
+        const result = sessions.flat().slice(0, MAX_ITEMS_TO_INGEST);
+
+        console.log(`Returning ${result.length} entries`);
 
         return result;
     }

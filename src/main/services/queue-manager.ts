@@ -21,7 +21,6 @@ export interface CrawledData {
 
 export class QueueManager {
     private urlQueue: { url: string; depth: number; timestamp: number }[] = [];
-    private crawledHashes: Set<string> = new Set();
     private crawlCount: number = 0;
     private crawlStore: CrawlStore;
     private pool: Pool<CrawlerWorker>;
@@ -57,9 +56,16 @@ export class QueueManager {
             return;
         }
 
-        const urlHash = await this.hashString(url);
+        const { strippedUrl } = extractQueryParams(url);
+        const urlHash = await this.hashString(strippedUrl);
 
-        if (!this.crawledHashes.has(urlHash) && !this.urlQueue.some(item => item.url === url)) {
+        const existingEntry = await this.crawlStore.get(strippedUrl);
+        if (existingEntry && existingEntry.ingested) {
+            console.log(`Skipping ${url}: Already ingested`);
+            return;
+        }
+
+        if (!this.urlQueue.some(item => item.url === url)) {
             this.urlQueue.push({ url, depth, timestamp: Date.now() });
             this.sortQueue();
 
@@ -105,7 +111,10 @@ export class QueueManager {
     private async handleCrawlResult(result: CrawledData) {
         const { url, rawHtml, content, links, depth } = result;
         if (rawHtml && content) {
-            await this.crawlStore.add(url, rawHtml, content, depth);
+            const added = await this.crawlStore.add(url, rawHtml, content, depth);
+            if (added) {
+                await this.crawlStore.markAsIngested(url);
+            }
         }
         if (depth < this.MAX_DEPTH) {
             for (const link of links) {

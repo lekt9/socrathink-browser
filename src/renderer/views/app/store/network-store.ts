@@ -26,11 +26,11 @@ export interface StoredNetworkData {
 export class NetworkStore {
   private static instance: NetworkStore;
   private db: Datastore;
-  private readonly MAX_ITEMS = 2000;
+  private readonly MAX_ITEMS = 200;
 
   private constructor() {
     this.db = new Datastore({
-      filename: getPath('storage/actions.db'),
+      filename: getPath('storage/action.db'),
       autoload: true,
     });
   }
@@ -101,7 +101,7 @@ export class NetworkStore {
       const updatedEntry = {
         responseStatus: details.status,
         responseHeaders: details.headers,
-        responseBody: rawBody,
+        responseBody: rawBody.slice(0, 200000),
         contentHash,
       };
 
