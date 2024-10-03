@@ -68,9 +68,9 @@ export class QueueManager {
         if (!this.urlQueue.some(item => item.url === url)) {
             this.urlQueue.push({ url, depth, timestamp: Date.now() });
             this.sortQueue();
-
             if (!this.isProcessing) {
-                this.processQueue();
+                console.log('processing queue');
+                await this.processQueue();
             }
         }
     }
@@ -85,13 +85,16 @@ export class QueueManager {
     }
 
     private async processQueue(): Promise<void> {
+        console.log('processing queue');
         this.isProcessing = true;
         while (this.crawlCount < this.MAX_CRAWLS || this.MAX_CRAWLS === -1) {
             if (this.urlQueue.length === 0) {
                 this.isProcessing = false;
                 return;
             }
+            console.log('processing queue', this.urlQueue.length);
             this.sortQueue()
+            console.log('processing queue', this.urlQueue.length);
             const item = this.urlQueue.shift();
             if (item) {
                 try {
@@ -112,9 +115,6 @@ export class QueueManager {
         const { url, rawHtml, content, links, depth } = result;
         if (rawHtml && content) {
             const added = await this.crawlStore.add(url, rawHtml, content, depth);
-            if (added) {
-                await this.crawlStore.markAsIngested(url);
-            }
         }
         if (depth < this.MAX_DEPTH) {
             for (const link of links) {
