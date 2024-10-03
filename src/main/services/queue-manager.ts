@@ -97,7 +97,7 @@ export class QueueManager {
             const item = this.urlQueue.shift();
             if (item) {
                 try {
-                    await this.throttle(item.depth);
+                    // await this.throttle(item.depth);
                     const authInfo: SerializableAuthInfo = await getAuthInfo(item.url);
                     const result = await this.pool.queue(worker => worker.crawlUrl(authInfo, item.depth));
                     await this.handleCrawlResult(result);
