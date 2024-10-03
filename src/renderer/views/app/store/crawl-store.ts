@@ -47,7 +47,7 @@ export class CrawlStore {
         try {
             const newEntry: StoredCrawlData = {
                 urlHash,
-                url: strippedUrl,
+                url,
                 contentHash,
                 timestamp: Date.now(),
                 content: content.slice(0, 200000), // cap to a max length
@@ -77,11 +77,9 @@ export class CrawlStore {
     }
 
     public async markAsIngested(url: string): Promise<boolean> {
-        const { strippedUrl } = extractQueryParams(url);
-        const urlHash = await this.hashString(strippedUrl);
 
         return new Promise((resolve, reject) => {
-            this.db.update({ url: strippedUrl }, { $set: { ingested: true } }, {}, (err, numReplaced) => {
+            this.db.update({ url }, { $set: { ingested: true } }, {}, (err, numReplaced) => {
                 if (err) {
                     reject(err);
                 } else {
