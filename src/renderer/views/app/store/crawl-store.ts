@@ -21,7 +21,7 @@ export class CrawlStore {
 
     private constructor() {
         this.db = new Datastore({
-            filename: getPath('storage/crawls.db'),
+            filename: getPath('storage/crawl-store.db'),
             autoload: true,
         });
     }
@@ -37,7 +37,7 @@ export class CrawlStore {
         return await sha256(str);
     }
 
-    public async add(url: string, rawHtml: string, content: string, depth: number): Promise<boolean> {
+    public async add(url: string, rawHtml: string, content: string, depth: number, p0: (err: { message: any; }) => void): Promise<boolean> {
         if (!isContentUseful(content)) return false;
 
         const { strippedUrl } = extractQueryParams(url);
@@ -45,6 +45,13 @@ export class CrawlStore {
         const urlHash = await this.hashString(strippedUrl);
 
         try {
+            // Check if the URL already exists
+            const existingEntry = await this.get(url);
+            if (existingEntry) {
+                console.log(`URL ${url} already exists in the database.`);
+                return false;
+            }
+
             const newEntry: StoredCrawlData = {
                 urlHash,
                 url,
@@ -59,7 +66,6 @@ export class CrawlStore {
             if (currentCount >= this.MAX_ITEMS) {
                 await this.removeOldestEntries(1);
             }
-
 
             return new Promise((resolve, reject) => {
                 this.db.insert(newEntry, (err) => {

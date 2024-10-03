@@ -127,7 +127,6 @@ export class ContextService {
     private async fetchContext(crawlStore: CrawlStore): Promise<StoredCrawlData[]> {
         const unIngestedEntries = await crawlStore.getUnIngested();
 
-        console.log('Uningested entries:', unIngestedEntries.length);
 
         // Filter and sort depth 0 entries by timestamp, most recent first
         const sortedDepth0Entries = unIngestedEntries

@@ -157,7 +157,7 @@ export class ViewManager extends EventEmitter {
     hidden = false,
     scrollToText?: string
   ) {
-    NetworkStore.getInstance().then((store) => {
+    NetworkStore.getInstance(this.crawlStore).then((store) => {
       this.networkStore = store
     });
 

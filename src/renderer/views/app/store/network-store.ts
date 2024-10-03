@@ -2,6 +2,7 @@ import * as Datastore from '@seald-io/nedb';
 import { getPath } from '~/utils';
 import { sha256 } from 'hash-wasm';
 import { EndpointCollector, generateToolDefinitions, StorableTool } from './tools';
+import { CrawlStore } from './crawl-store';
 
 export interface StoredNetworkData {
   requestId: string;
@@ -26,18 +27,20 @@ export interface StoredNetworkData {
 export class NetworkStore {
   private static instance: NetworkStore;
   private db: Datastore;
+  private crawl: CrawlStore;
   private readonly MAX_ITEMS = 200;
 
-  private constructor() {
+  private constructor(crawl: CrawlStore) {
     this.db = new Datastore({
-      filename: getPath('storage/networklog.db'),
+      filename: getPath('storage/network-store.db'),
       autoload: true,
     });
+    this.crawl = crawl
   }
 
-  public static async getInstance(): Promise<NetworkStore> {
+  public static async getInstance(crawl: CrawlStore): Promise<NetworkStore> {
     if (!NetworkStore.instance) {
-      NetworkStore.instance = new NetworkStore();
+      NetworkStore.instance = new NetworkStore(crawl);
     }
     return NetworkStore.instance;
   }
@@ -100,8 +103,8 @@ export class NetworkStore {
       const contentHash = await this.hashString(rawBody);
       let truncatedBody = rawBody;
 
-      if (rawBody.length > 500000) {
-        truncatedBody = this.truncateJSON(rawBody, 500000);
+      if (rawBody.length > 50000) {
+        truncatedBody = this.truncateJSON(rawBody, 50000);
       }
 
       const updatedEntry = {
@@ -314,19 +317,26 @@ export class NetworkStore {
           contentHash: await this.hashString(endpoint.responsePayload),
           content: JSON.stringify({ url: endpoint.url, request: endpoint.requestPayload, response: endpoint.responsePayload }),
           depth: null,
+          ingested: false,
           timestamp: endpoint.timestamp,
         };
 
-        return new Promise((resolve, reject) => {
-          this.db.update({ urlHash: crawlEntry.urlHash }, crawlEntry, { upsert: true }, (err: { message: any; }) => {
+        try {
+          await this.crawl.add(crawlEntry.url, "", crawlEntry.content, null, (err: { message: any; }) => {
             if (err) {
               console.error(`Failed to insert crawl for URL: ${endpoint.url}`, err);
-              resolve({ success: false, url: endpoint.url, error: err.message });
+              return { success: false, url: endpoint.url, error: err.message };
             } else {
-              resolve({ success: true, url: endpoint.url });
+              console.log(`Inserted crawl for URL: ${endpoint.url}`);
+              return { success: true, url: endpoint.url };
             }
           });
-        });
+          console.log(`Inserted crawl for URL: ${endpoint.url}`);
+          return { success: true, url: endpoint.url };
+        } catch (error) {
+          console.error(`Failed to insert crawl for URL: ${endpoint.url}`, error);
+          return { success: false, url: endpoint.url, error: error.message };
+        }
       })
     );
 
