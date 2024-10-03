@@ -81,7 +81,7 @@ export class CrawlStore {
         const urlHash = await this.hashString(strippedUrl);
 
         return new Promise((resolve, reject) => {
-            this.db.update({ urlHash }, { $set: { ingested: true } }, {}, (err, numReplaced) => {
+            this.db.update({ url: strippedUrl }, { $set: { ingested: true } }, {}, (err, numReplaced) => {
                 if (err) {
                     reject(err);
                 } else {

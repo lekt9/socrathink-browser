@@ -1,5 +1,3 @@
-// src/main/services/queue-manager.ts
-
 import { simpleFetch } from '~/utils/hybrid-fetch';
 import { handleContextOmnidoraRequest } from '..';
 import { sha256 } from 'hash-wasm';
@@ -25,8 +23,9 @@ export class QueueManager {
     private crawlStore: CrawlStore;
     private pool: Pool<CrawlerWorker>;
     private isProcessing: boolean = false;
+    private lastCrawlTime: number = 0;
 
-    private readonly MAX_DEPTH = 3;
+    private readonly MAX_DEPTH = 5;
     private readonly MAX_CRAWLS: number = -1;
 
     private allowedContentTypes: Set<string> = new Set([
@@ -98,6 +97,7 @@ export class QueueManager {
             const item = this.urlQueue.shift();
             if (item) {
                 try {
+                    await this.throttle(item.depth);
                     const authInfo: SerializableAuthInfo = await getAuthInfo(item.url);
                     const result = await this.pool.queue(worker => worker.crawlUrl(authInfo, item.depth));
                     await this.handleCrawlResult(result);
@@ -109,6 +109,19 @@ export class QueueManager {
             }
         }
         this.isProcessing = false;
+    }
+
+    private async throttle(depth: number): Promise<void> {
+        if (depth > 1) {
+            const now = Date.now();
+            const timeSinceLastCrawl = now - this.lastCrawlTime;
+            const throttleTime = depth * 350; // depth * 350ms 
+            if (timeSinceLastCrawl < throttleTime) {
+                const waitTime = throttleTime - timeSinceLastCrawl;
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+            this.lastCrawlTime = Date.now();
+        }
     }
 
     private async handleCrawlResult(result: CrawledData) {
