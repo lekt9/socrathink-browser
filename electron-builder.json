@@ -19,7 +19,8 @@
     {
       "provider": "github",
       "owner": "The-Clarity-Projekt",
-      "repo": "socrathink-browser"
+      "repo": "socrathink-browser",
+      "releaseType": "release"
     }
   ],
   "deb": {
@@ -39,10 +40,13 @@
   },
   "linux": {
     "target": [
-      "AppImage",
-      "deb",
-      "rpm",
-      "pacman"
+      {
+        "target": "AppImage",
+        "arch": [
+          "x64",
+          "arm64"
+        ]
+      }
     ],
     "category": "Network",
     "executableName": "socrathink",

@@ -38,7 +38,7 @@
     "rebuild": "electron-builder install-app-deps && electron-rebuild -f -w sqlite3",
     "postinstall": "patch-package",
     "publish-only": "electron-builder --publish always",
-    "deploy": "git add . && git commit -m \"Pre-deploy commit\" || true && npm version patch && npm run build && electron-builder build --mac --win --publish always"
+    "deploy": "git add . && git commit -m \"Pre-deploy commit\" || true && npm version patch && npm run build && electron-builder build --mac --win --linux --publish always"
   },
   "devDependencies": {
     "@babel/core": "^7.17.0",
