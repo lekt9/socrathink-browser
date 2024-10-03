@@ -30,7 +30,7 @@ export class NetworkStore {
 
   private constructor() {
     this.db = new Datastore({
-      filename: getPath('storage/action.db'),
+      filename: getPath('storage/networklog.db'),
       autoload: true,
     });
   }
@@ -98,10 +98,16 @@ export class NetworkStore {
     try {
       const rawBody = details.body || '';
       const contentHash = await this.hashString(rawBody);
+      let truncatedBody = rawBody;
+
+      if (rawBody.length > 500000) {
+        truncatedBody = this.truncateJSON(rawBody, 500000);
+      }
+
       const updatedEntry = {
         responseStatus: details.status,
         responseHeaders: details.headers,
-        responseBody: rawBody.slice(0, 200000),
+        responseBody: truncatedBody,
         contentHash,
       };
 
@@ -119,6 +125,49 @@ export class NetworkStore {
       console.error('Error updating network log with response:', error);
       throw error;
     }
+  }
+
+  private truncateJSON(jsonString: string, maxLength: number): string {
+    try {
+      const obj = JSON.parse(jsonString);
+      const truncated = this.truncateObject(obj, maxLength);
+      return JSON.stringify(truncated);
+    } catch (error) {
+      // If parsing fails, truncate the string directly
+      return jsonString.slice(0, maxLength);
+    }
+  }
+
+  private truncateObject(obj: any, maxLength: number): any {
+    const stringify = (o: any) => JSON.stringify(o);
+    const parse = (s: string) => JSON.parse(s);
+
+    if (stringify(obj).length <= maxLength) {
+      return obj;
+    }
+
+    if (Array.isArray(obj)) {
+      let i = obj.length;
+      while (i > 0 && stringify(obj.slice(0, i)).length > maxLength) {
+        i--;
+      }
+      return obj.slice(0, i);
+    }
+
+    if (typeof obj === 'object' && obj !== null) {
+      const newObj: any = {};
+      for (const key of Object.keys(obj)) {
+        const tempObj = { ...newObj, [key]: obj[key] };
+        if (stringify(tempObj).length <= maxLength) {
+          newObj[key] = obj[key];
+        } else {
+          break;
+        }
+      }
+      return newObj;
+    }
+
+    return obj;
   }
 
   public async clearLogs(): Promise<void> {
@@ -214,7 +263,7 @@ export class NetworkStore {
               collector.processEndpoint({
                 url: pair.url,
                 requestPayload: pair.requestBody,
-                responsePayload: pair.responseBody.slice(0, 30000),
+                responsePayload: pair.responseBody,
                 timestamp: pair.timestamp
               });
               console.log(`Processed endpoint: ${pair.url}`);
