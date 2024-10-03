@@ -60,7 +60,7 @@ export class QueueManager {
         const urlHash = await this.hashString(strippedUrl);
 
         const existingEntry = await this.crawlStore.get(strippedUrl);
-        if (existingEntry) {
+        if (existingEntry && existingEntry.content) {
             console.log(`Skipping ${url}: Already ingested`);
             return;
         }
