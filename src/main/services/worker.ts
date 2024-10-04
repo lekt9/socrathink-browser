@@ -6,7 +6,7 @@ import { parseMarkdown } from '~/utils/parse';
 import { PDFDocument } from 'pdf-lib';
 import { getTextExtractor } from 'office-text-extractor';
 
-const TIMEOUT = 500; // 0.5 seconds timeout
+const TIMEOUT = 2000; // 0.5 seconds timeout
 
 const extractLinks = (content: string, baseUrl: string): string[] => {
     const linkRegex = /<a\s+(?:[^>]*?\s+)?href="([^"]*)"[^>]*>/g;

@@ -22,7 +22,7 @@ export class CrawlStore {
 
     private constructor() {
         this.db = new Datastore({
-            filename: getPath('storage/crawler.db'),
+            filename: getPath('storage/crawl2.db'),
             autoload: true,
         });
     }
@@ -135,10 +135,8 @@ export class CrawlStore {
     }
 
     public async get(url: string): Promise<StoredCrawlData | null> {
-        const { strippedUrl } = extractQueryParams(url);
-        const urlHash = await this.hashString(strippedUrl);
         return new Promise((resolve, reject) => {
-            this.db.findOne({ urlHash }, (err: any, doc: StoredCrawlData) => {
+            this.db.findOne({ url }, (err: any, doc: StoredCrawlData) => {
                 if (err) {
                     reject(err);
                 } else {

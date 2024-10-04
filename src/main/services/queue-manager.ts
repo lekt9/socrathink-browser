@@ -63,7 +63,7 @@ export class QueueManager {
             concurrency: 1
         });
         this.queueStore = new Datastore<QueueItem>({
-            filename: getPath('storage/queue.db'),
+            filename: getPath('storage/queue2.db'),
             autoload: true,
         });
 
@@ -200,7 +200,7 @@ export class QueueManager {
         if (depth > 1) {
             const now = Date.now();
             const timeSinceLastCrawl = now - this.lastCrawlTime;
-            const throttleTime = depth * 350; // depth * 350ms 
+            const throttleTime = depth * 250; // depth * 350ms 
             if (timeSinceLastCrawl < throttleTime) {
                 const waitTime = throttleTime - timeSinceLastCrawl;
                 await new Promise(resolve => setTimeout(resolve, waitTime));

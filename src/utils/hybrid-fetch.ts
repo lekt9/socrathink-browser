@@ -5,7 +5,38 @@ import { BrowserWindow, ipcMain, session } from 'electron';
 import { URL } from 'url';
 import { AuthFetchOptions } from '~/main/services/context';
 import { handleContextOmnidoraRequest } from '~/main';
+import { JSDOM } from 'jsdom';
 
+export async function extractDateFromMeta(content: string): Promise<string | null> {
+    try {
+        const dom = new JSDOM(content);
+        const document = dom.window.document;
+
+        // Common meta tag properties
+        const metaProperties = [
+            'article:published_time',
+            'pubdate',
+            'publishdate',
+            'timestamp',
+            'dc.date.issued'
+        ];
+
+        for (const property of metaProperties) {
+            const metaTag = document.querySelector(`meta[property="${property}"], meta[name="${property}"]`);
+            if (metaTag) {
+                const content = metaTag.getAttribute('content');
+                if (content) {
+                    return new Date(content).toISOString();
+                }
+            }
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Error extracting date from meta tags:', error);
+        return null;
+    }
+}
 export const extractLinks = (content: string, baseUrl: string): string[] => {
     const linkRegex = /<a\s+(?:[^>]*?\s+)?href="([^"]*)"[^>]*>/g;
     const links: string[] = [];
@@ -58,9 +89,6 @@ export async function simpleFetch(url: string, options = {}): Promise<any> {
         }
 
         const contentType = response.headers.get('content-type');
-        const lastModified = response.headers.get('last-modified');
-        console.log(JSON.stringify(response.headers))
-        const lastModifiedDate = lastModified ? new Date(lastModified).toISOString() : null;
         const extractor = getTextExtractor();
         let title: string | null = null;
 
@@ -74,7 +102,7 @@ export async function simpleFetch(url: string, options = {}): Promise<any> {
                 console.log(`Processing ${contentType}`);
                 const buffer = await response.arrayBuffer();
                 const text = await extractor.extractText({ input: Buffer.from(buffer), type: 'buffer' });
-                return { links: [], content: text, lastModified: lastModifiedDate, title: null };
+                return { links: [], content: text, lastModified: null, title: null };
             } else if (contentType.includes('application/json')) {
                 console.log("Processing JSON");
                 const text = await response.text();
@@ -82,15 +110,17 @@ export async function simpleFetch(url: string, options = {}): Promise<any> {
                     try {
                         const jsonContent = JSON.parse(text);
                         const links = extractLinksFromJson(jsonContent, url);
-                        return { links, content: JSON.stringify(jsonContent, null, 2), lastModified: lastModifiedDate, title: null };
+                        return { links, content: JSON.stringify(jsonContent, null, 2), lastModified: null, title: null };
                     } catch (error) {
                         console.error("Error parsing JSON:", error);
                     }
                 }
                 console.log(`Unsupported content length: ${text.length}`);
-                return { links: [], content: '', lastModified: lastModifiedDate, title: null };
+                return { links: [], content: '', lastModified: null, title: null };
             } else if (contentType.includes('text/html') || contentType.includes('text/plain')) {
                 const content = await response.text();
+                const lastModified = await extractDateFromMeta(content);
+                const lastModifiedDate = lastModified ? new Date(lastModified).toISOString() : null;
 
                 // Extract title from HTML content
                 if (contentType.includes('text/html')) {
@@ -101,11 +131,11 @@ export async function simpleFetch(url: string, options = {}): Promise<any> {
                 return { links: extractLinks(content, url), content: parseMarkdown(content), lastModified: lastModifiedDate, title };
             } else {
                 console.log(`Unsupported content type: ${contentType}`);
-                return { links: [], content: '', lastModified: lastModifiedDate, title: null };
+                return { links: [], content: '', lastModified: null, title: null };
             }
         } else {
             console.log("No content type specified");
-            return { links: [], content: '', lastModified: lastModifiedDate, title: null };
+            return { links: [], content: '', lastModified: null, title: null };
         }
     } catch (error) {
         if (error.name === 'AbortError') {
