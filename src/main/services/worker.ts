@@ -67,7 +67,7 @@ const crawlUrl = async (authInfo: SerializableAuthInfo, depth: number) => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
 
-        const { rawHtml, content, links } = await simpleFetch(url, {
+        const { rawHtml, content, links, lastModified } = await simpleFetch(url, {
             method: 'GET',
             headers: headers,
         });
@@ -76,7 +76,7 @@ const crawlUrl = async (authInfo: SerializableAuthInfo, depth: number) => {
 
         if (content && content.trim().length === 0) {
             // console.log(`No useful content found for URL: ${url}`);
-            return { url, rawHtml: '', content: '', links: [], completed: false };
+            return { url, rawHtml: '', content: '', links: [], completed: false, lastModified: null, depth };
         } else {
             return {
                 url: authInfo.url,
@@ -84,12 +84,13 @@ const crawlUrl = async (authInfo: SerializableAuthInfo, depth: number) => {
                 content,
                 links: links ?? [],
                 completed: true,
-                depth
+                depth,
+                lastModified
             };
         }
     } catch (error) {
         console.error(`Crawl error: ${error.message}`);
-        return { url: authInfo.url, rawHtml: '', content: '', links: [], completed: false };
+        return { url: authInfo.url, rawHtml: '', content: '', links: [], completed: false, lastModified: null, depth };
     }
 };
 
@@ -99,6 +100,7 @@ const CrawlerWorker = {
     crawlUrl,
     depth,
 };
+console.log("Worker initialised")
 expose(CrawlerWorker);
 
 export type CrawlerWorker = typeof CrawlerWorker;

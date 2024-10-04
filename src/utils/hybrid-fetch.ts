@@ -42,7 +42,7 @@ function extractLinksFromJson(json: any, baseUrl: string): string[] {
     return [...new Set(links)]; // Remove duplicates
 }
 
-const TIMEOUT = 1000; // 0.5 seconds timeout
+const TIMEOUT = 1000; // 1 second timeout
 
 export async function simpleFetch(url: string, options = {}): Promise<any> {
     try {
@@ -58,17 +58,23 @@ export async function simpleFetch(url: string, options = {}): Promise<any> {
         }
 
         const contentType = response.headers.get('content-type');
+        const lastModified = response.headers.get('last-modified');
+        console.log(JSON.stringify(response.headers))
+        const lastModifiedDate = lastModified ? new Date(lastModified).toISOString() : null;
         const extractor = getTextExtractor();
+        let title: string | null = null;
 
         if (contentType) {
-            if (contentType.includes('application/pdf') ||
+            if (
+                contentType.includes('application/pdf') ||
                 contentType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document') ||
                 contentType.includes('application/vnd.openxmlformats-officedocument.presentationml.presentation') ||
-                contentType.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
+                contentType.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ) {
                 console.log(`Processing ${contentType}`);
                 const buffer = await response.arrayBuffer();
                 const text = await extractor.extractText({ input: Buffer.from(buffer), type: 'buffer' });
-                return { links: [], content: text };
+                return { links: [], content: text, lastModified: lastModifiedDate, title: null };
             } else if (contentType.includes('application/json')) {
                 console.log("Processing JSON");
                 const text = await response.text();
@@ -76,23 +82,30 @@ export async function simpleFetch(url: string, options = {}): Promise<any> {
                     try {
                         const jsonContent = JSON.parse(text);
                         const links = extractLinksFromJson(jsonContent, url);
-                        return { links, content: JSON.stringify(jsonContent, null, 2) };
+                        return { links, content: JSON.stringify(jsonContent, null, 2), lastModified: lastModifiedDate, title: null };
                     } catch (error) {
                         console.error("Error parsing JSON:", error);
                     }
                 }
                 console.log(`Unsupported content length: ${text.length}`);
-                return { links: [], content: '' };
+                return { links: [], content: '', lastModified: lastModifiedDate, title: null };
             } else if (contentType.includes('text/html') || contentType.includes('text/plain')) {
                 const content = await response.text();
-                return { links: extractLinks(content, url), content: parseMarkdown(content) };
+
+                // Extract title from HTML content
+                if (contentType.includes('text/html')) {
+                    const titleMatch = content.match(/<title>(.*?)<\/title>/i);
+                    title = titleMatch ? titleMatch[1].trim() : null;
+                }
+
+                return { links: extractLinks(content, url), content: parseMarkdown(content), lastModified: lastModifiedDate, title };
             } else {
                 console.log(`Unsupported content type: ${contentType}`);
-                return { links: [], content: '' };
+                return { links: [], content: '', lastModified: lastModifiedDate, title: null };
             }
         } else {
             console.log("No content type specified");
-            return { links: [], content: '' };
+            return { links: [], content: '', lastModified: lastModifiedDate, title: null };
         }
     } catch (error) {
         if (error.name === 'AbortError') {
@@ -100,7 +113,7 @@ export async function simpleFetch(url: string, options = {}): Promise<any> {
         } else {
             console.error('Error in simpleFetch:', error);
         }
-        return { links: [], content: '' };
+        return { links: [], content: '', lastModified: null, title: null };
     }
 }
 
@@ -117,10 +130,10 @@ export async function parsePdf(pdfBuffer: ArrayBuffer): Promise<string> {
 
 export async function hybridFetch(url: string, options: AuthFetchOptions = {}): Promise<any> {
     try {
-        const { content: simpleContent, links } = await simpleFetch(url, options);
-        return { content: simpleContent, links };
+        const { content: simpleContent, links, lastModified, title } = await simpleFetch(url, options);
+        return { content: simpleContent, links, lastModified, title };
     } catch (error) {
         console.error('Error in hybridFetch:', error);
-        return { content: '', links: [] };
+        return { content: '', links: [], lastModified: null, title: null };
     }
 }

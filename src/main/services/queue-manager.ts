@@ -3,10 +3,13 @@ import { handleContextOmnidoraRequest } from '..';
 import { sha256 } from 'hash-wasm';
 import { CrawlStore } from '~/renderer/views/app/store/crawl-store';
 import { getAuthInfo, SerializableAuthInfo } from './context';
-import { Pool, ModuleThread } from 'threads';
 import { extractQueryParams } from '~/utils/url';
 import { parseMarkdown } from '~/utils/parse';
 import { CrawlerWorker } from './worker';
+import { ModuleThread, Pool, spawn, Worker } from 'threads';
+import { app } from 'electron';
+import * as Datastore from '@seald-io/nedb';
+import { getPath } from '~/utils';
 
 export interface CrawledData {
     url: string;
@@ -15,17 +18,28 @@ export interface CrawledData {
     links: string[];
     completed: boolean;
     depth: number;
+    lastModified: string | null;
 }
 
+export interface QueueItem {
+    url: string;
+    depth: number;
+    timestamp: number;
+}
+
+const workerPath = app.isPackaged
+    ? `${process.resourcesPath}/worker.bundle.js`
+    : `${app.getAppPath()}/build/worker.bundle.js`;
+
 export class QueueManager {
-    private urlQueue: { url: string; depth: number; timestamp: number }[] = [];
     private crawlCount: number = 0;
     private crawlStore: CrawlStore;
     private pool: Pool<CrawlerWorker>;
     private isProcessing: boolean = false;
     private lastCrawlTime: number = 0;
+    private queueStore: Datastore<QueueItem>;
 
-    private readonly MAX_DEPTH = 5;
+    private readonly MAX_DEPTH = 2;
     private readonly MAX_CRAWLS: number = -1;
 
     private allowedContentTypes: Set<string> = new Set([
@@ -44,7 +58,26 @@ export class QueueManager {
 
     constructor(crawlStore: CrawlStore, pool: Pool<CrawlerWorker>) {
         this.crawlStore = crawlStore;
-        this.pool = pool;
+        this.pool = Pool(() => spawn<CrawlerWorker>(new Worker(workerPath)), {
+            size: 1,
+            concurrency: 1
+        });
+        this.queueStore = new Datastore<QueueItem>({
+            filename: getPath('storage/queue.db'),
+            autoload: true,
+        });
+
+        // Ensure indexes for efficient sorting
+        this.queueStore.ensureIndex({ fieldName: 'depth' }, (err) => {
+            if (err) {
+                console.error('Error creating index on depth:', err);
+            }
+        });
+        this.queueStore.ensureIndex({ fieldName: 'timestamp' }, (err) => {
+            if (err) {
+                console.error('Error creating index on timestamp:', err);
+            }
+        });
     }
 
     public async enqueue(url: string, depth: number = 1): Promise<void> {
@@ -64,51 +97,102 @@ export class QueueManager {
             return;
         }
 
-        if (!this.urlQueue.some(item => item.url === url)) {
-            this.urlQueue.push({ url, depth, timestamp: Date.now() });
+        const existingQueueItem = await this.findQueueItem(url);
+        if (!existingQueueItem) {
+            const newItem: QueueItem = { url, depth, timestamp: Date.now() };
+            await this.insertQueueItem(newItem);
             this.sortQueue();
+
             if (!this.isProcessing) {
-                console.log('processing queue');
+                console.log('Processing queue');
                 await this.processQueue();
             }
         }
     }
 
-    private sortQueue(): void {
-        this.urlQueue.sort((a, b) => {
-            if (a.depth !== b.depth) {
-                return a.depth - b.depth; // Lower depth first
-            }
-            return b.timestamp - a.timestamp; // Newer timestamp first
+    private async findQueueItem(url: string): Promise<QueueItem | null> {
+        return new Promise((resolve, reject) => {
+            this.queueStore.findOne({ url }, (err, doc) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(doc as QueueItem | null);
+                }
+            });
         });
     }
 
+    private async insertQueueItem(item: QueueItem): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this.queueStore.insert(item, (err) => {
+                if (err) {
+                    console.error('Error inserting queue item:', err);
+                    reject(err);
+                } else {
+                    resolve();
+                }
+            });
+        });
+    }
+
+    private sortQueue(): void {
+        // NeDB does not require explicit sorting; sorting is handled during retrieval
+    }
+
     private async processQueue(): Promise<void> {
-        console.log('processing queue');
         this.isProcessing = true;
+
         while (this.crawlCount < this.MAX_CRAWLS || this.MAX_CRAWLS === -1) {
-            if (this.urlQueue.length === 0) {
+            const nextItem = await this.getNextQueueItem();
+            if (!nextItem) {
                 this.isProcessing = false;
                 return;
             }
-            console.log('processing queue', this.urlQueue.length);
-            this.sortQueue()
-            console.log('processing queue', this.urlQueue.length);
-            const item = this.urlQueue.shift();
-            if (item) {
-                try {
-                    // await this.throttle(item.depth);
-                    const authInfo: SerializableAuthInfo = await getAuthInfo(item.url);
-                    const result = await this.pool.queue(worker => worker.crawlUrl(authInfo, item.depth));
-                    await this.handleCrawlResult(result);
-                } catch (error) {
-                    console.error(`Error processing URL: ${item.url}`, error);
-                    this.handleFailedCrawl(item.url);
-                }
-                this.crawlCount++;
+
+            try {
+                await this.throttle(nextItem.depth);
+                const authInfo: SerializableAuthInfo = await getAuthInfo(nextItem.url);
+                const result = await this.pool.queue(worker => worker.crawlUrl(authInfo, nextItem.depth));
+                await this.handleCrawlResult(result);
+            } catch (error) {
+                console.error(`Error processing URL: ${nextItem.url}`, error);
+                this.handleFailedCrawl(nextItem.url);
             }
+
+            await this.removeQueueItem(nextItem.url);
+            this.crawlCount++;
         }
+
         this.isProcessing = false;
+    }
+
+    private async getNextQueueItem(): Promise<QueueItem | null> {
+        return new Promise((resolve, reject) => {
+            this.queueStore.find({})
+                .sort({ depth: 1, timestamp: -1 }) // Lower depth first, newer timestamp first
+                .limit(1)
+                .exec((err, docs) => {
+                    if (err) {
+                        console.error('Error fetching next queue item:', err);
+                        reject(err);
+                    } else {
+                        resolve(docs[0] || null);
+                    }
+                });
+        });
+    }
+
+    private async removeQueueItem(url: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this.queueStore.remove({ url }, {}, (err, numRemoved) => {
+                if (err) {
+                    console.error('Error removing queue item:', err);
+                    reject(err);
+                } else {
+                    resolve();
+                }
+            });
+        });
     }
 
     private async throttle(depth: number): Promise<void> {
@@ -125,9 +209,13 @@ export class QueueManager {
     }
 
     private async handleCrawlResult(result: CrawledData) {
-        const { url, rawHtml, content, links, depth } = result;
+        const { url, rawHtml, content, links, depth, lastModified } = result;
         if (rawHtml && content) {
-            const added = await this.crawlStore.add(url, rawHtml, content, depth);
+            const added = await this.crawlStore.add(url, rawHtml, content, depth, lastModified, (err) => {
+                if (err) {
+                    console.error(`Error adding URL: ${url}`, err);
+                }
+            });
         }
         if (depth < this.MAX_DEPTH) {
             for (const link of links) {
@@ -140,9 +228,19 @@ export class QueueManager {
     private handleFailedCrawl(url: string): void {
         const urlObj = new URL(url);
         const domain = urlObj.hostname;
-        this.urlQueue = this.urlQueue.filter(item => new URL(item.url).hostname !== domain);
-        this.urlQueue.push({ url, depth: this.MAX_DEPTH, timestamp: Date.now() });
-        this.sortQueue();
+
+        // Remove all items with the same domain
+        this.queueStore.remove({ url: new RegExp(`^https?://${domain}`) }, { multi: true }, (err, numRemoved) => {
+            if (err) {
+                console.error('Error removing failed crawl items:', err);
+            } else {
+                console.log(`Removed ${numRemoved} items from domain ${domain}`);
+            }
+        });
+
+        // Re-enqueue the failed URL with MAX_DEPTH
+        const failedItem: QueueItem = { url, depth: this.MAX_DEPTH, timestamp: Date.now() };
+        this.insertQueueItem(failedItem).then(() => this.sortQueue()).catch(err => console.error(err));
     }
 
     private async hashString(str: string): Promise<string> {

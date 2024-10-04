@@ -17,10 +17,6 @@ import { CrawlStore } from '~/renderer/views/app/store/crawl-store';
 import { NetworkStore } from '~/renderer/views/app/store/network-store';
 
 
-const workerPath = app.isPackaged
-  ? `${process.resourcesPath}/worker.bundle.js`
-  : `${app.getAppPath()}/build/worker.bundle.js`;
-
 export class ViewManager extends EventEmitter {
   public views = new Map<number, View>();
   public hiddenViews = new Map<number, View>();
@@ -56,11 +52,6 @@ export class ViewManager extends EventEmitter {
 
     CrawlStore.getInstance().then(store => {
       this.crawlStore = store;
-
-      this.pool = Pool(() => spawn<CrawlerWorker>(new Worker(workerPath)), {
-        size: 4,
-        concurrency: 4
-      });
     });
 
     const { id } = window.win;

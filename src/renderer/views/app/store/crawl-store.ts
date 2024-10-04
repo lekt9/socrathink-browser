@@ -11,7 +11,8 @@ export interface StoredCrawlData {
     timestamp: number;
     content?: string;
     depth: number;
-    ingested: boolean; // New field
+    lastModified: string | null;
+    ingested: boolean;
 }
 
 export class CrawlStore {
@@ -21,7 +22,7 @@ export class CrawlStore {
 
     private constructor() {
         this.db = new Datastore({
-            filename: getPath('storage/crawl-store.db'),
+            filename: getPath('storage/crawler.db'),
             autoload: true,
         });
     }
@@ -37,7 +38,7 @@ export class CrawlStore {
         return await sha256(str);
     }
 
-    public async add(url: string, rawHtml: string, content: string, depth: number, p0: (err: { message: any; }) => void): Promise<boolean> {
+    public async add(url: string, rawHtml: string, content: string, depth: number, lastModified: string | null, p0: (err: { message: any; }) => void): Promise<boolean> {
         if (!isContentUseful(content)) return false;
 
         const { strippedUrl } = extractQueryParams(url);
@@ -59,6 +60,7 @@ export class CrawlStore {
                 timestamp: Date.now(),
                 content: content.slice(0, 200000), // cap to a max length
                 depth: depth,
+                lastModified: lastModified ?? null,
                 ingested: false, // Initialize as not ingested
             };
 
@@ -67,8 +69,13 @@ export class CrawlStore {
                 await this.removeOldestEntries(1);
             }
 
+            if (!content) {
+                console.log(`Content for URL ${url} is null. Skipping insertion.`);
+                return false;
+            }
+
             return new Promise((resolve, reject) => {
-                this.db.insert(newEntry, (err) => {
+                this.db.insert(newEntry, (err: any) => {
                     if (err) {
                         reject(err);
                     } else {
@@ -85,7 +92,7 @@ export class CrawlStore {
     public async markAsIngested(url: string): Promise<boolean> {
 
         return new Promise((resolve, reject) => {
-            this.db.update({ url }, { $set: { ingested: true } }, {}, (err, numReplaced) => {
+            this.db.update({ url }, { $set: { ingested: true, content: null } }, {}, (err: any, numReplaced: number) => {
                 if (err) {
                     reject(err);
                 } else {
@@ -97,7 +104,7 @@ export class CrawlStore {
 
     public async getUnIngested(): Promise<StoredCrawlData[]> {
         return new Promise((resolve, reject) => {
-            this.db.find({ ingested: false }, (err, docs) => {
+            this.db.find({ ingested: false }, (err: any, docs: StoredCrawlData[]) => {
                 if (err) {
                     reject(err);
                 } else {
@@ -109,13 +116,13 @@ export class CrawlStore {
 
     private async removeOldestEntries(count: number): Promise<void> {
         return new Promise((resolve, reject) => {
-            this.db.find({}).sort({ timestamp: 1 }).limit(count).exec((err, docs) => {
+            this.db.find({}).sort({ timestamp: 1 }).limit(count).exec((err: any, docs: any[]) => {
                 if (err) {
                     reject(err);
                 } else {
-                    const removePromises = docs.map(doc =>
-                        new Promise((resolve, reject) => {
-                            this.db.remove({ _id: doc._id }, {}, (err) => {
+                    const removePromises = docs.map((doc: { _id: any; }) =>
+                        new Promise<void>((resolve, reject) => {
+                            this.db.remove({ _id: doc._id }, {}, (err: any) => {
                                 if (err) reject(err);
                                 else resolve();
                             });
@@ -131,7 +138,7 @@ export class CrawlStore {
         const { strippedUrl } = extractQueryParams(url);
         const urlHash = await this.hashString(strippedUrl);
         return new Promise((resolve, reject) => {
-            this.db.findOne({ urlHash }, (err, doc) => {
+            this.db.findOne({ urlHash }, (err: any, doc: StoredCrawlData) => {
                 if (err) {
                     reject(err);
                 } else {
@@ -146,7 +153,7 @@ export class CrawlStore {
 
     public async has(url: string): Promise<boolean> {
         return new Promise((resolve, reject) => {
-            this.db.findOne({ url }, (err, doc) => {
+            this.db.findOne({ url }, (err: any, doc: any) => {
                 if (err) {
                     reject(err);
                 } else {
@@ -158,7 +165,7 @@ export class CrawlStore {
 
     public async getAll(): Promise<StoredCrawlData[]> {
         return new Promise((resolve, reject) => {
-            this.db.find({}, (err, docs) => {
+            this.db.find({}, (err: any, docs: StoredCrawlData[]) => {
                 if (err) {
                     reject(err);
                 } else {
@@ -170,7 +177,7 @@ export class CrawlStore {
 
     public async clear(): Promise<void> {
         return new Promise((resolve, reject) => {
-            this.db.remove({}, { multi: true }, (err) => {
+            this.db.remove({}, { multi: true }, (err: any) => {
                 if (err) {
                     reject(err);
                 } else {
@@ -182,7 +189,7 @@ export class CrawlStore {
 
     public async size(): Promise<number> {
         return new Promise((resolve, reject) => {
-            this.db.count({}, (err, count) => {
+            this.db.count({}, (err: any, count: number | PromiseLike<number>) => {
                 if (err) {
                     reject(err);
                 } else {
