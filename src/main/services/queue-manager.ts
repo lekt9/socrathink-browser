@@ -81,21 +81,22 @@ export class QueueManager {
     }
 
     public async enqueue(url: string, depth: number = 1): Promise<void> {
+
+        const existingEntry = await this.crawlStore.get(url);
+        if (existingEntry && existingEntry.content) {
+            // console.log(`Skipping ${url}: Already crawled`);
+            return;
+        }
         const urlObj = new URL(url);
 
-        if (urlObj.protocol !== 'https:' && urlObj.protocol !== 'socrathink:') {
-            console.log(`Skipping ${url}: Only HTTPS and socrathink protocols are allowed`);
+        if (urlObj.protocol !== 'https:' && urlObj.protocol !== 'http:' && urlObj.protocol !== 'socrathink:') {
+            console.log(`Skipping ${url}: Only HTTPS, HTTP, and socrathink protocols are allowed`);
             return;
         }
 
-        const { strippedUrl } = extractQueryParams(url);
-        const urlHash = await this.hashString(strippedUrl);
+        // const { strippedUrl } = extractQueryParams(url);
+        // const urlHash = await this.hashString(strippedUrl);
 
-        const existingEntry = await this.crawlStore.get(strippedUrl);
-        if (existingEntry && existingEntry.content) {
-            console.log(`Skipping ${url}: Already ingested`);
-            return;
-        }
 
         const existingQueueItem = await this.findQueueItem(url);
         if (!existingQueueItem) {
