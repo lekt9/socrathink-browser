@@ -32,7 +32,7 @@ export class NetworkStore {
 
   private constructor(crawl: CrawlStore) {
     this.db = new Datastore({
-      filename: getPath('storage/network.db'),
+      filename: getPath('storage/network_store.db'),
       autoload: true,
     });
     this.crawl = crawl

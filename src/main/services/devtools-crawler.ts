@@ -87,7 +87,7 @@ export class DevToolsCrawler {
             // Map the requestId to the stored entry
             this.requestMap.set(requestId, storedEntry);
         } else {
-            console.warn(`Failed to store request with ID: ${requestId}`);
+            // console.warn(`Failed to store request with ID: ${requestId}`);
         }
     }
 
@@ -107,7 +107,7 @@ export class DevToolsCrawler {
                 body: undefined // Body will be updated in loadingFinished
             });
         } else {
-            console.warn(`No matching request found for response with ID: ${requestId}`);
+            // console.warn(`No matching request found for response with ID: ${requestId}`);
         }
     }
 
@@ -138,7 +138,7 @@ export class DevToolsCrawler {
                 this.requestMap.delete(requestId);
             }
         } else {
-            console.warn(`No valid request found for loading finished with ID: ${requestId}`);
+            // console.warn(`No valid request found for loading finished with ID: ${requestId}`);
         }
     }
 

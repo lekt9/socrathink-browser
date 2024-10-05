@@ -22,7 +22,7 @@ export class CrawlStore {
 
     private constructor() {
         this.db = new Datastore({
-            filename: getPath('storage/crawl2.db'),
+            filename: getPath('storage/crawl_store.db'),
             autoload: true,
         });
     }
@@ -137,12 +137,9 @@ export class CrawlStore {
     public async get(url: string): Promise<StoredCrawlData | null> {
         return new Promise((resolve, reject) => {
             this.db.findOne({ url }, (err: any, doc: StoredCrawlData) => {
-                if (err) {
-                    reject(err);
+                if (err || !(doc && !doc.content)) {
+                    resolve(null);
                 } else {
-                    if (doc && !doc.content) {
-                        console.log(`Content for URL ${url} has expired.`);
-                    }
                     resolve(doc as StoredCrawlData | null);
                 }
             });

@@ -185,9 +185,10 @@ export class View {
       await this.updateURL(this.webContents.getURL());
     });
 
-    this.webContents.addListener('did-finish-load', () => {
+    this.webContents.addListener('did-finish-load', async () => {
       const url = this.webContents.getURL();
-      this.linkProcessor.addInitialUrl(url);
+      console.log('did-finish-load', url)
+      await this.linkProcessor.addInitialUrl(url);
     });
 
     this.webContents.addListener('did-start-loading', async () => {

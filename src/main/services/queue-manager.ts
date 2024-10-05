@@ -63,7 +63,7 @@ export class QueueManager {
             concurrency: 1
         });
         this.queueStore = new Datastore<QueueItem>({
-            filename: getPath('storage/queue2.db'),
+            filename: getPath('storage/queue_manager.db'),
             autoload: true,
         });
 
@@ -81,14 +81,15 @@ export class QueueManager {
     }
 
     public async enqueue(url: string, depth: number = 1): Promise<void> {
-
+        console.log('enqueue', url)
         const existingEntry = await this.crawlStore.get(url);
+        console.log('existingEntry', existingEntry)
         if (existingEntry && existingEntry.content) {
-            // console.log(`Skipping ${url}: Already crawled`);
+            console.log(`Skipping ${url}: Already crawled`);
             return;
         }
         const urlObj = new URL(url);
-
+        // console.log('urlObj', urlObj)
         if (urlObj.protocol !== 'https:' && urlObj.protocol !== 'http:' && urlObj.protocol !== 'socrathink:') {
             console.log(`Skipping ${url}: Only HTTPS, HTTP, and socrathink protocols are allowed`);
             return;
@@ -97,8 +98,9 @@ export class QueueManager {
         // const { strippedUrl } = extractQueryParams(url);
         // const urlHash = await this.hashString(strippedUrl);
 
-
+        // console.log('url', url)
         const existingQueueItem = await this.findQueueItem(url);
+        // console.log('existingQueueItem', existingQueueItem)
         if (!existingQueueItem) {
             const newItem: QueueItem = { url, depth, timestamp: Date.now() };
             await this.insertQueueItem(newItem);
@@ -151,7 +153,7 @@ export class QueueManager {
             }
 
             try {
-                await this.throttle(nextItem.depth);
+                // await this.throttle(nextItem.depth);
                 const authInfo: SerializableAuthInfo = await getAuthInfo(nextItem.url);
                 const result = await this.pool.queue(worker => worker.crawlUrl(authInfo, nextItem.depth));
                 await this.handleCrawlResult(result);
@@ -196,19 +198,6 @@ export class QueueManager {
         });
     }
 
-    private async throttle(depth: number): Promise<void> {
-        if (depth > 1) {
-            const now = Date.now();
-            const timeSinceLastCrawl = now - this.lastCrawlTime;
-            const throttleTime = depth * 250; // depth * 350ms 
-            if (timeSinceLastCrawl < throttleTime) {
-                const waitTime = throttleTime - timeSinceLastCrawl;
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-            }
-            this.lastCrawlTime = Date.now();
-        }
-    }
-
     private async handleCrawlResult(result: CrawledData) {
         const { url, rawHtml, content, links, depth, lastModified } = result;
         if (rawHtml && content) {
@@ -219,6 +208,9 @@ export class QueueManager {
             });
         }
         if (depth < this.MAX_DEPTH) {
+            if (depth > 1) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
             for (const link of links) {
                 await this.enqueue(link, depth + 1);
             }
@@ -249,6 +241,7 @@ export class QueueManager {
     }
 
     public async addInitialUrl(url: string): Promise<void> {
+        console.log('addInitialUrl', url)
         await this.enqueue(url, 0);
     }
 }
