@@ -1,6 +1,6 @@
 {
   "name": "socrathink",
-  "version": "1.1.7",
+  "version": "1.1.4",
   "sideEffects": false,
   "description": "Extensible, fast and innovative web browser with The Clarity Project UI.",
   "keywords": [
@@ -38,7 +38,7 @@
     "rebuild": "electron-builder install-app-deps && electron-rebuild -f -w sqlite3",
     "postinstall": "patch-package",
     "publish-only": "electron-builder --publish always",
-    "deploy": "git add . && git commit -m \"Pre-deploy commit\" || true && npm version patch && npm run build && electron-builder build --win --linux --publish always"
+    "deploy": "git add . && git commit -m \"Pre-deploy commit\" || true && npm version patch && npm run build && electron-builder build --mac --win --linux --publish always"
   },
   "devDependencies": {
     "@babel/core": "^7.17.0",
@@ -128,8 +128,6 @@
     "bindings": "^1.5.0",
     "browserify-zlib": "^0.2.0",
     "buffer": "^6.0.3",
-    "bufferutil": "^4.0.8",
-    "canvas": "^2.11.2",
     "cheerio": "^1.0.0-rc.12",
     "cross-fetch": "^4.0.0",
     "crypto-browserify": "^3.12.0",
@@ -143,6 +141,7 @@
     "https-browserify": "^1.0.0",
     "isomorphic-fetch": "^3.0.0",
     "joplin-turndown-plugin-gfm": "^1.0.12",
+    "jsdom": "^25.0.1",
     "jwt-decode": "^3.1.2",
     "mime-types": "^2.1.35",
     "office-text-extractor": "^3.0.3",
