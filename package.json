@@ -128,6 +128,8 @@
     "bindings": "^1.5.0",
     "browserify-zlib": "^0.2.0",
     "buffer": "^6.0.3",
+    "bufferutil": "^4.0.8",
+    "canvas": "^2.11.2",
     "cheerio": "^1.0.0-rc.12",
     "cross-fetch": "^4.0.0",
     "crypto-browserify": "^3.12.0",
