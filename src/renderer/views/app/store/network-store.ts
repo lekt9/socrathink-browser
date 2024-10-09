@@ -3,7 +3,7 @@ import { getPath } from '~/utils';
 import { sha256 } from 'hash-wasm';
 import { EndpointCollector, generateToolDefinitions, StorableTool } from './tools';
 import { CrawlStore } from './crawl-store';
-
+import * as fs from 'fs';
 export interface StoredNetworkData {
   requestId: string;
   urlHash: string;
@@ -308,49 +308,31 @@ export class NetworkStore {
 
   public async getTools() {
     const tools = await this.deriveTools();
+    const requestResponsePairs = [];
 
-    const insertPromises = tools.flatMap(tool =>
-      tool.endpoints.map(async endpoint => {
-        const crawlEntry = {
-          urlHash: await this.hashString(endpoint.url),
-          url: endpoint.requestPayload ? endpoint.url + "\n" + JSON.stringify(endpoint.requestPayload) : endpoint.url,
-          contentHash: await this.hashString(endpoint.responsePayload),
-          content: JSON.stringify({ url: endpoint.url, request: endpoint.requestPayload, response: endpoint.responsePayload }),
-          depth: null,
-          ingested: false,
-          timestamp: endpoint.timestamp,
-        };
-
+    for (const tool of tools) {
+      for (const endpoint of tool.endpoints) {
         try {
-          await this.crawl.add(crawlEntry.url, "", crawlEntry.content, null, (err: { message: any; }) => {
-            if (err) {
-              console.error(`Failed to insert crawl for URL: ${endpoint.url}`, err);
-              return { success: false, url: endpoint.url, error: err.message };
-            } else {
-              console.log(`Inserted crawl for URL: ${endpoint.url}`);
-              return { success: true, url: endpoint.url };
-            }
-          });
-          console.log(`Inserted crawl for URL: ${endpoint.url}`);
-          return { success: true, url: endpoint.url };
+          const urlObj = new URL(endpoint.url);
+          const pair = {
+            method: endpoint.method,
+            url: endpoint.url,
+            query_params: Object.fromEntries(urlObj.searchParams),
+            request_payload: endpoint.requestPayload && endpoint.requestPayload.includes('{') ? JSON.parse(endpoint.requestPayload) : null,
+            response: endpoint.responsePayload && endpoint.responsePayload.includes('{') ? JSON.parse(endpoint.responsePayload) : null
+          };
+          requestResponsePairs.push(pair);
         } catch (error) {
-          console.error(`Failed to insert crawl for URL: ${endpoint.url}`, error);
-          return { success: false, url: endpoint.url, error: error.message };
+          console.log(`Error processing endpoint: ${endpoint.url}`, error);
         }
-      })
-    );
+      }
+    }
 
-    const results = await Promise.all(insertPromises);
+    // Save the request-response pairs to a JSON file
+    const outputPath = './request_response_pairs.json';
+    fs.writeFileSync(outputPath, JSON.stringify(requestResponsePairs, null, 2));
 
-    const successfulInserts = results.filter(result => result.success);
-    const failedInserts = results.filter(result => !result.success);
-
-    console.log({
-      totalProcessed: results.length,
-      successfulInserts: successfulInserts.length,
-      failedInserts: failedInserts.length,
-      failedUrls: failedInserts.map(result => result.url)
-    });
+    console.log(`Saved ${requestResponsePairs.length} request-response pairs to ${outputPath}`);
 
     return tools;
   }

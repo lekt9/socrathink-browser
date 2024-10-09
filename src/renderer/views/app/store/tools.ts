@@ -80,18 +80,24 @@ export class EndpointCollector {
         if (this.endpoints.find(ep => ep.url === pair.url)) {
             return; // Skip if we've already processed this exact URL
         }
+        try {
 
-        const pathInfo = this.extractPathInfo(pair.url, pair.responsePayload);
-        const schemaSignature = this.generateSchemaSignature(pair.requestPayload, pair.responsePayload);
 
-        const processedInfo: ProcessedEndpointInfo = {
-            ...pair,
-            pathInfo,
-            schemaSignature,
-        };
 
-        this.endpoints.push(processedInfo);
-        this.assignToTool(processedInfo);
+            const pathInfo = this.extractPathInfo(pair.url, pair.responsePayload);
+            const schemaSignature = this.generateSchemaSignature(pair.requestPayload, pair.responsePayload);
+
+            const processedInfo: ProcessedEndpointInfo = {
+                ...pair,
+                pathInfo,
+                schemaSignature,
+            };
+
+            this.endpoints.push(processedInfo);
+            this.assignToTool(processedInfo);
+        } catch (error) {
+            console.log(`Error processing endpoint: ${pair.url}`, error);
+        }
     }
 
     private extractPathInfo(url: string, response: any): PathInfo {
@@ -334,62 +340,66 @@ export function generateToolDefinitions(tools: Tool[]) {
     const toolDefinitions: { [key: string]: any } = {};
 
     for (const toolItem of tools) {
-        const { name, pattern, endpoints, queryParamOptions } = toolItem;
+        try {
+            const { name, pattern, endpoints, queryParamOptions } = toolItem;
 
-        // Extract path parameters from the pattern
-        const pathParams: string[] = [];
-        const pathParts = pattern.split('/').filter(Boolean);
-        for (const part of pathParts) {
-            if (part.startsWith(':')) {
-                pathParams.push(part.substring(1));
+            // Extract path parameters from the pattern
+            const pathParams: string[] = [];
+            const pathParts = pattern.split('/').filter(Boolean);
+            for (const part of pathParts) {
+                if (part.startsWith(':')) {
+                    pathParams.push(part.substring(1));
+                }
             }
-        }
 
-        // Build JSON Schema for parameters
-        const parameters: any = {
-            type: 'object',
-            properties: {},
-            required: [],
-        };
-
-        // Add path parameters
-        for (const paramName of pathParams) {
-            parameters.properties[paramName] = {
-                type: 'string',
-                description: `The ${paramName} parameter. Examples: ${getPathParamExamples(
-                    endpoints,
-                    paramName
-                ).join(', ')}.`,
+            // Build JSON Schema for parameters
+            const parameters: any = {
+                type: 'object',
+                properties: {},
+                required: [],
             };
-            parameters.required.push(paramName);
-        }
 
-        // Add query parameters
-        for (const [key, values] of Object.entries(queryParamOptions)) {
-            if (values.length <= 5) {
-                // Use enum
-                parameters.properties[key] = {
+            // Add path parameters
+            for (const paramName of pathParams) {
+                parameters.properties[paramName] = {
                     type: 'string',
-                    enum: values,
-                    description: `Possible values for ${key}.`,
+                    description: `The ${paramName} parameter. Examples: ${getPathParamExamples(
+                        endpoints,
+                        paramName
+                    ).join(', ')}.`,
                 };
-            } else {
-                // Provide examples
-                parameters.properties[key] = {
-                    type: 'string',
-                    description: `The ${key} parameter. Examples: ${values
-                        .slice(0, 3)
-                        .join(', ')}${values.length > 3 ? ', etc.' : ''}.`,
-                };
+                parameters.required.push(paramName);
             }
-            parameters.required.push(key);
-        }
 
-        // Generate the tool definition with URL reconstruction in execute
-        toolDefinitions[name] = {
-            description: `Tool for handling ${name.replace(/_/g, ' ')} operation.`,
-            parameters: parameters,
-        };
+            // Add query parameters
+            for (const [key, values] of Object.entries(queryParamOptions)) {
+                if (values.length <= 5) {
+                    // Use enum
+                    parameters.properties[key] = {
+                        type: 'string',
+                        enum: values,
+                        description: `Possible values for ${key}.`,
+                    };
+                } else {
+                    // Provide examples
+                    parameters.properties[key] = {
+                        type: 'string',
+                        description: `The ${key} parameter. Examples: ${values
+                            .slice(0, 3)
+                            .join(', ')}${values.length > 3 ? ', etc.' : ''}.`,
+                    };
+                }
+                parameters.required.push(key);
+            }
+
+            // Generate the tool definition with URL reconstruction in execute
+            toolDefinitions[name] = {
+                description: `Tool for handling ${name.replace(/_/g, ' ')} operation.`,
+                parameters: parameters,
+            };
+        } catch (error) {
+            console.log(`Error generating tool definition for ${name}`, error);
+        }
     }
 
     return toolDefinitions;
