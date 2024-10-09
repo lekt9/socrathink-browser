@@ -5,12 +5,11 @@ import { BrowserWindow, ipcMain, session } from 'electron';
 import { URL } from 'url';
 import { AuthFetchOptions } from '~/main/services/context';
 import { handleContextOmnidoraRequest } from '~/main';
-import { JSDOM } from 'jsdom';
+import cheerio from 'cheerio';
 
 export async function extractDateFromMeta(content: string): Promise<string | null> {
     try {
-        const dom = new JSDOM(content);
-        const document = dom.window.document;
+        const $ = cheerio.load(content);
 
         // Common meta tag properties
         const metaProperties = [
@@ -22,9 +21,9 @@ export async function extractDateFromMeta(content: string): Promise<string | nul
         ];
 
         for (const property of metaProperties) {
-            const metaTag = document.querySelector(`meta[property="${property}"], meta[name="${property}"]`);
-            if (metaTag) {
-                const content = metaTag.getAttribute('content');
+            const metaTag = $(`meta[property="${property}"], meta[name="${property}"]`);
+            if (metaTag.length) {
+                const content = metaTag.attr('content');
                 if (content) {
                     return new Date(content).toISOString();
                 }
@@ -37,16 +36,21 @@ export async function extractDateFromMeta(content: string): Promise<string | nul
         return null;
     }
 }
+
 export const extractLinks = (content: string, baseUrl: string): string[] => {
-    const linkRegex = /<a\s+(?:[^>]*?\s+)?href="([^"]*)"[^>]*>/g;
+    const $ = cheerio.load(content);
     const links: string[] = [];
-    let match;
-    while ((match = linkRegex.exec(content)) !== null) {
-        const link = new URL(match[1], baseUrl).href;
-        if (link.startsWith('http')) {
-            links.push(link);
+
+    $('a[href]').each((_, element) => {
+        const href = $(element).attr('href');
+        if (href) {
+            const link = new URL(href, baseUrl).href;
+            if (link.startsWith('http')) {
+                links.push(link);
+            }
         }
-    }
+    });
+
     return links;
 };
 
@@ -124,8 +128,8 @@ export async function simpleFetch(url: string, options = {}): Promise<any> {
 
                 // Extract title from HTML content
                 if (contentType.includes('text/html')) {
-                    const titleMatch = content.match(/<title>(.*?)<\/title>/i);
-                    title = titleMatch ? titleMatch[1].trim() : null;
+                    const $ = cheerio.load(content);
+                    title = $('title').text().trim() || null;
                 }
 
                 return { links: extractLinks(content, url), content: parseMarkdown(content), lastModified: lastModifiedDate, title };
