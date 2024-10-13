@@ -28,14 +28,16 @@ export class NetworkStore {
   private static instance: NetworkStore;
   private db: Datastore;
   private crawl: CrawlStore;
-  private readonly MAX_ITEMS = 200;
+  private memoryStore: StoredNetworkData[] = [];
+  private readonly MAX_ITEMS = 5000;
+  private readonly MEMORY_STORE_SIZE = 100;
 
   private constructor(crawl: CrawlStore) {
     this.db = new Datastore({
       filename: getPath('storage/network_store.db'),
       autoload: true,
     });
-    this.crawl = crawl
+    this.crawl = crawl;
   }
 
   public static async getInstance(crawl: CrawlStore): Promise<NetworkStore> {
@@ -80,21 +82,33 @@ export class NetworkStore {
       responseBody: undefined,
       contentHash: '',
       timestamp: Date.now(),
-      parentUrlHash: details.initiator?.urlHash
+      parentUrlHash: details.initiator?.urlHash,
+      type: details.type
     };
-    const currentCount = await this.size();
-    if (currentCount >= this.MAX_ITEMS) {
-      await this.removeOldestEntries(1);
-    }
-    return new Promise((resolve, reject) => {
-      this.db.insert(newEntry, (err: any, doc: StoredNetworkData) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(doc as StoredNetworkData);
-        }
+
+    if (this.memoryStore.length < this.MEMORY_STORE_SIZE) {
+      this.memoryStore.push(newEntry);
+      this.sortMemoryStore();
+      return newEntry;
+    } else {
+      const currentCount = await this.size();
+      if (currentCount >= this.MAX_ITEMS) {
+        await this.removeOldestEntries(1);
+      }
+      return new Promise((resolve, reject) => {
+        this.db.insert(newEntry, (err: any, doc: StoredNetworkData) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(doc as StoredNetworkData);
+          }
+        });
       });
-    });
+    }
+  }
+
+  private sortMemoryStore(): void {
+    this.memoryStore.sort((a, b) => b.timestamp - a.timestamp);
   }
 
   public async updateLogWithResponse(details: { requestId: string; status: number; headers: Record<string, string>; body?: string }): Promise<void> {
@@ -113,6 +127,12 @@ export class NetworkStore {
         responseBody: truncatedBody,
         contentHash,
       };
+
+      const memoryIndex = this.memoryStore.findIndex(item => item.requestId === details.requestId);
+      if (memoryIndex !== -1) {
+        Object.assign(this.memoryStore[memoryIndex], updatedEntry);
+        return;
+      }
 
       return new Promise((resolve, reject) => {
         this.db.update({ requestId: details.requestId }, { $set: updatedEntry }, {}, (err: any) => {
@@ -174,6 +194,7 @@ export class NetworkStore {
   }
 
   public async clearLogs(): Promise<void> {
+    this.memoryStore = [];
     return new Promise((resolve, reject) => {
       this.db.remove({}, { multi: true }, (err: any) => {
         if (err) {
@@ -186,6 +207,9 @@ export class NetworkStore {
   }
 
   public async get(requestId: string): Promise<StoredNetworkData | null> {
+    const memoryItem = this.memoryStore.find(item => item.requestId === requestId);
+    if (memoryItem) return memoryItem;
+
     return new Promise((resolve, reject) => {
       this.db.findOne({ requestId }, (err: any, doc: StoredNetworkData) => {
         if (err) {
@@ -198,6 +222,8 @@ export class NetworkStore {
   }
 
   public async has(requestId: string): Promise<boolean> {
+    if (this.memoryStore.some(item => item.requestId === requestId)) return true;
+
     return new Promise((resolve, reject) => {
       this.db.findOne({ requestId }, (err: any, doc: any) => {
         if (err) {
@@ -215,7 +241,7 @@ export class NetworkStore {
         if (err) {
           reject(err);
         } else {
-          resolve(docs as StoredNetworkData[]);
+          resolve([...this.memoryStore, ...docs]);
         }
       });
     });
@@ -227,7 +253,7 @@ export class NetworkStore {
         if (err) {
           reject(err);
         } else {
-          resolve(count);
+          resolve(this.memoryStore.length + count);
         }
       });
     });

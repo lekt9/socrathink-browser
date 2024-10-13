@@ -38,6 +38,8 @@ export class ContextService {
                         ok: true,
                         status: 200,
                         data: responseData["content"],
+                        title: responseData["title"],
+                        lastModified: responseData["lastModified"],
                     };
                 } else {
                     return {
