@@ -22,6 +22,45 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@anush008/tokenizers-darwin-universal@npm:0.0.0":
+  version: 0.0.0
+  resolution: "@anush008/tokenizers-darwin-universal@npm:0.0.0"
+  conditions: os=darwin
+  languageName: node
+  linkType: hard
+
+"@anush008/tokenizers-linux-x64-gnu@npm:0.0.0":
+  version: 0.0.0
+  resolution: "@anush008/tokenizers-linux-x64-gnu@npm:0.0.0"
+  conditions: os=linux & cpu=x64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@anush008/tokenizers-win32-x64-msvc@npm:0.0.0":
+  version: 0.0.0
+  resolution: "@anush008/tokenizers-win32-x64-msvc@npm:0.0.0"
+  conditions: os=win32 & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@anush008/tokenizers@npm:^0.0.0":
+  version: 0.0.0
+  resolution: "@anush008/tokenizers@npm:0.0.0"
+  dependencies:
+    "@anush008/tokenizers-darwin-universal": "npm:0.0.0"
+    "@anush008/tokenizers-linux-x64-gnu": "npm:0.0.0"
+    "@anush008/tokenizers-win32-x64-msvc": "npm:0.0.0"
+  dependenciesMeta:
+    "@anush008/tokenizers-darwin-universal":
+      optional: true
+    "@anush008/tokenizers-linux-x64-gnu":
+      optional: true
+    "@anush008/tokenizers-win32-x64-msvc":
+      optional: true
+  checksum: 10c0/aac628c1888731fc8912b13097924e8edd2cedb71273eade42088f1e23ef45d0216589f872a6457687139612d85a97fc26a05e7a1e7ccc396f7439e463772e7e
+  languageName: node
+  linkType: hard
+
 "@babel/code-frame@npm:^7.0.0, @babel/code-frame@npm:^7.16.7, @babel/code-frame@npm:^7.24.7":
   version: 7.24.7
   resolution: "@babel/code-frame@npm:7.24.7"
@@ -2496,6 +2535,13 @@ __metadata:
   dependencies:
     sparse-bitfield: "npm:^3.0.3"
   checksum: 10c0/2f391db96db7a69e6849cc906e4a0bcd14127ad0493f97fc4134790fa2f0d4af5abcd110382c9d97a996ca31766e0c358c2e08d154f6ddfa06144e2c8a036895
+  languageName: node
+  linkType: hard
+
+"@nlpjs/similarity@npm:^4.26.1":
+  version: 4.26.1
+  resolution: "@nlpjs/similarity@npm:4.26.1"
+  checksum: 10c0/ddd90ec5bb0e92e27077eb1af0cc6d1df3bc961d9a74034a4f5a4009ae459a4203d72509fd5d1d5286fccf1fc4f2f126f241940b861a3a7db4a5a6017912f057
   languageName: node
   linkType: hard
 
@@ -6535,6 +6581,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"duck-duck-scrape@npm:^2.2.5":
+  version: 2.2.5
+  resolution: "duck-duck-scrape@npm:2.2.5"
+  dependencies:
+    html-entities: "npm:^2.3.3"
+    needle: "npm:^3.2.0"
+  checksum: 10c0/eff42214c48dd0533c75ddc49aab8ff4fd40387a97a15752f285f7e9450779951633dbc5d06057cbf1ff49210f7e3c6c859a1803860897236c9b1ec0bbabbf92
+  languageName: node
+  linkType: hard
+
 "duck@npm:^0.1.12":
   version: 0.1.12
   resolution: "duck@npm:0.1.12"
@@ -7426,6 +7482,18 @@ __metadata:
   version: 3.0.1
   resolution: "fast-uri@npm:3.0.1"
   checksum: 10c0/3cd46d6006083b14ca61ffe9a05b8eef75ef87e9574b6f68f2e17ecf4daa7aaadeff44e3f0f7a0ef4e0f7e7c20fc07beec49ff14dc72d0b500f00386592f2d10
+  languageName: node
+  linkType: hard
+
+"fastembed@npm:^1.14.1":
+  version: 1.14.1
+  resolution: "fastembed@npm:1.14.1"
+  dependencies:
+    "@anush008/tokenizers": "npm:^0.0.0"
+    onnxruntime-node: "npm:1.15.1"
+    progress: "npm:^2.0.3"
+    tar: "npm:^6.2.0"
+  checksum: 10c0/39b14ac2447b127a56ed9ff4793afa3aa04560c4fe8171fbf7e18571608a6e15530a780de4376afef8a934d86b6d1e172f6937646e0596910e43660dbf7c19df
   languageName: node
   linkType: hard
 
@@ -8480,7 +8548,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"html-entities@npm:^2.1.0, html-entities@npm:^2.3.2":
+"html-entities@npm:^2.1.0, html-entities@npm:^2.3.2, html-entities@npm:^2.3.3":
   version: 2.5.2
   resolution: "html-entities@npm:2.5.2"
   checksum: 10c0/f20ffb4326606245c439c231de40a7c560607f639bf40ffbfb36b4c70729fd95d7964209045f1a4e62fe17f2364cef3d6e49b02ea09016f207fde51c2211e481
@@ -8755,7 +8823,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"iconv-lite@npm:0.6.3, iconv-lite@npm:^0.6.2":
+"iconv-lite@npm:0.6.3, iconv-lite@npm:^0.6.2, iconv-lite@npm:^0.6.3":
   version: 0.6.3
   resolution: "iconv-lite@npm:0.6.3"
   dependencies:
@@ -10647,6 +10715,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"needle@npm:^3.2.0":
+  version: 3.3.1
+  resolution: "needle@npm:3.3.1"
+  dependencies:
+    iconv-lite: "npm:^0.6.3"
+    sax: "npm:^1.2.4"
+  bin:
+    needle: bin/needle
+  checksum: 10c0/233b9315d47b735867d03e7a018fb665ee6cacf3a83b991b19538019cf42b538a3e85ca745c840b4c5e9a0ffdca76472f941363bf7c166214ae8cbc650fd4d39
+  languageName: node
+  linkType: hard
+
 "negotiator@npm:0.6.3, negotiator@npm:^0.6.3":
   version: 0.6.3
   resolution: "negotiator@npm:0.6.3"
@@ -11142,11 +11222,28 @@ __metadata:
   languageName: node
   linkType: hard
 
+"onnxruntime-common@npm:~1.15.1":
+  version: 1.15.1
+  resolution: "onnxruntime-common@npm:1.15.1"
+  checksum: 10c0/4e87d04ec09551be0fbe3a0587274bb311e69c0681e135131efc068d99a1a511c73441122c852df370f036de2adb7efb955291625d6eb8aa6ca9defa04f57eee
+  languageName: node
+  linkType: hard
+
 "onnxruntime-node@npm:1.14.0":
   version: 1.14.0
   resolution: "onnxruntime-node@npm:1.14.0"
   dependencies:
     onnxruntime-common: "npm:~1.14.0"
+  conditions: (os=win32 | os=darwin | os=linux)
+  languageName: node
+  linkType: hard
+
+"onnxruntime-node@npm:1.15.1":
+  version: 1.15.1
+  resolution: "onnxruntime-node@npm:1.15.1"
+  dependencies:
+    onnxruntime-common: "npm:~1.15.1"
+  checksum: 10c0/239c4f792f5554d87f6038e32ef6c09091c5b4ae498cc722cee36fa71a77276b3334e3e52d48df93e94abf6f1409d01e433a6a5898f52d3592705090e2208dd4
   conditions: (os=win32 | os=darwin | os=linux)
   languageName: node
   linkType: hard
@@ -13234,6 +13331,7 @@ __metadata:
     "@fortawesome/free-solid-svg-icons": "npm:^6.0.0-beta2"
     "@fortawesome/react-fontawesome": "npm:^0.1.17"
     "@llama-node/llama-cpp": "npm:^0.1.6"
+    "@nlpjs/similarity": "npm:^4.26.1"
     "@nxdb/nxdb": "npm:^14.17.2"
     "@pmmmwh/react-refresh-webpack-plugin": "npm:^0.5.4"
     "@qdrant/js-client-rest": "npm:^1.10.0"
@@ -13271,6 +13369,7 @@ __metadata:
     cross-env: "npm:7.0.3"
     cross-fetch: "npm:^4.0.0"
     crypto-browserify: "npm:^3.12.0"
+    duck-duck-scrape: "npm:^2.2.5"
     electron: "npm:^31.3.1"
     electron-builder: "npm:^24.13.3"
     electron-debug: "npm:^4.0.0"
@@ -13281,6 +13380,7 @@ __metadata:
     eslint-plugin-prettier: "npm:^4.0.0"
     eslint-plugin-react: "npm:^7.28.0"
     fast-average-color: "npm:^7.0.1"
+    fastembed: "npm:^1.14.1"
     file-loader: "npm:^6.2.0"
     file-type: "npm:17.1.1"
     fork-ts-checker-webpack-plugin: "npm:^7.0.0"
@@ -13868,7 +13968,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tar@npm:^6.0.5, tar@npm:^6.1.11, tar@npm:^6.1.12, tar@npm:^6.1.2, tar@npm:^6.2.1":
+"tar@npm:^6.0.5, tar@npm:^6.1.11, tar@npm:^6.1.12, tar@npm:^6.1.2, tar@npm:^6.2.0, tar@npm:^6.2.1":
   version: 6.2.1
   resolution: "tar@npm:6.2.1"
   dependencies:

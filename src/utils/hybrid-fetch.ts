@@ -5,12 +5,11 @@ import { BrowserWindow, ipcMain, session } from 'electron';
 import { URL } from 'url';
 import { AuthFetchOptions } from '~/main/services/context';
 import { handleContextOmnidoraRequest } from '~/main';
-import { JSDOM } from 'jsdom';
+import cheerio from 'cheerio';
 
 export async function extractDateFromMeta(content: string): Promise<string | null> {
     try {
-        const dom = new JSDOM(content);
-        const document = dom.window.document;
+        const $ = cheerio.load(content);
 
         // Common meta tag properties
         const metaProperties = [
@@ -22,11 +21,11 @@ export async function extractDateFromMeta(content: string): Promise<string | nul
         ];
 
         for (const property of metaProperties) {
-            const metaTag = document.querySelector(`meta[property="${property}"], meta[name="${property}"]`);
-            if (metaTag) {
-                const content = metaTag.getAttribute('content');
-                if (content) {
-                    return new Date(content).toISOString();
+            const metaTag = $(`meta[property="${property}"], meta[name="${property}"]`);
+            if (metaTag.length > 0) {
+                const contentAttr = metaTag.attr('content');
+                if (contentAttr) {
+                    return new Date(contentAttr).toISOString();
                 }
             }
         }
@@ -37,6 +36,7 @@ export async function extractDateFromMeta(content: string): Promise<string | nul
         return null;
     }
 }
+
 export const extractLinks = (content: string, baseUrl: string): string[] => {
     const linkRegex = /<a\s+(?:[^>]*?\s+)?href="([^"]*)"[^>]*>/g;
     const links: string[] = [];
@@ -124,8 +124,9 @@ export async function simpleFetch(url: string, options = {}): Promise<any> {
 
                 // Extract title from HTML content
                 if (contentType.includes('text/html')) {
-                    const titleMatch = content.match(/<title>(.*?)<\/title>/i);
-                    title = titleMatch ? titleMatch[1].trim() : null;
+                    const $ = cheerio.load(content);
+                    const titleTag = $('title');
+                    title = titleTag.length > 0 ? titleTag.first().text().trim() : null;
                 }
 
                 return { links: extractLinks(content, url), content: parseMarkdown(content), lastModified: lastModifiedDate, title };
@@ -138,7 +139,7 @@ export async function simpleFetch(url: string, options = {}): Promise<any> {
             return { links: [], content: '', lastModified: null, title: null };
         }
     } catch (error) {
-        if (error.name === 'AbortError') {
+        if ((error as any).name === 'AbortError') {
             console.error('Request timed out');
         } else {
             console.error('Error in simpleFetch:', error);

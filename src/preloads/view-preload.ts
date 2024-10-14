@@ -30,6 +30,7 @@ declare global {
     getTopSites?: (count: number) => Promise<any>;
     updateSettings?: (data: any) => void;
     markAsIngested: (url: string) => Promise<any>;
+    initiateActiveCrawl: (query: string) => Promise<any>;
   }
 }
 
@@ -57,6 +58,10 @@ contextBridge.exposeInMainWorld('getTools', async () => { // Exposed getTools
 });
 contextBridge.exposeInMainWorld('markAsIngested', async (url: string) => {
   return ipcRenderer.invoke('mark-as-ingested', url);
+});
+
+contextBridge.exposeInMainWorld('initiateActiveCrawl', async (query: string) => {
+  return ipcRenderer.invoke('initiate-active-crawl', query);
 });
 
 const goBack = async () => {

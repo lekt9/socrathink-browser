@@ -13,18 +13,26 @@ export interface StoredCrawlData {
     depth: number;
     lastModified: string | null;
     ingested: boolean;
+    similarityScore?: number;
 }
 
 export class CrawlStore {
     private static instance: CrawlStore;
     private db: Datastore;
+    private settingsDb: Datastore;
     private memoryStore: StoredCrawlData[] = [];
     private readonly MAX_ITEMS = 5000;
-    private readonly MEMORY_STORE_SIZE = 100;
+    private readonly MEMORY_STORE_SIZE = 200;
+    public currentActiveQuery: string | null = null;
 
     private constructor() {
         this.db = new Datastore({
-            filename: getPath('storage/crawl_db.db'),
+            filename: getPath('storage/crawl-store_db.db'),
+            autoload: true,
+        });
+
+        this.settingsDb = new Datastore({
+            filename: getPath('storage/settings_db.db'),
             autoload: true,
         });
 
@@ -42,6 +50,18 @@ export class CrawlStore {
                 });
             }
         });
+
+        // Add index for similarityScore
+        this.db.ensureIndex({ fieldName: 'similarityScore' }, (err) => {
+            if (err) {
+                console.error('Error creating index on similarityScore:', err);
+            } else {
+                console.log('Index on similarityScore ensured.');
+            }
+        });
+
+        // Load the currentActiveQuery from the settings database
+        this.loadCurrentActiveQuery();
     }
 
     public static async getInstance(): Promise<CrawlStore> {
@@ -49,6 +69,38 @@ export class CrawlStore {
             CrawlStore.instance = new CrawlStore();
         }
         return CrawlStore.instance;
+    }
+
+    private async loadCurrentActiveQuery(): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this.settingsDb.findOne({ key: 'currentActiveQuery' }, (err: any, doc: any) => {
+                if (err) {
+                    console.error('Error loading currentActiveQuery:', err);
+                    reject(err);
+                } else if (doc) {
+                    this.currentActiveQuery = doc.value;
+                }
+                resolve();
+            });
+        });
+    }
+
+    private async saveCurrentActiveQuery(query: string | null): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this.settingsDb.update(
+                { key: 'currentActiveQuery' },
+                { key: 'currentActiveQuery', value: query },
+                { upsert: true },
+                (err: any) => {
+                    if (err) {
+                        console.error('Error saving currentActiveQuery:', err);
+                        reject(err);
+                    } else {
+                        resolve();
+                    }
+                }
+            );
+        });
     }
 
     private async hashString(str: string): Promise<string> {
@@ -61,6 +113,7 @@ export class CrawlStore {
         content: string,
         depth: number,
         lastModified: string | null,
+        similarityScore: number,
         p0: (err: { message: any; }) => void
     ): Promise<boolean> {
         if (!isContentUseful(content)) return false;
@@ -86,6 +139,7 @@ export class CrawlStore {
                 depth: depth,
                 lastModified: lastModified ?? null,
                 ingested: false, // Initialize as not ingested
+                similarityScore,
             };
 
             if (this.memoryStore.length < this.MEMORY_STORE_SIZE) {
@@ -130,19 +184,47 @@ export class CrawlStore {
     }
 
     private sortMemoryStore(): void {
-        this.memoryStore.sort((a, b) => b.timestamp - a.timestamp);
+        this.memoryStore.sort((a, b) => {
+            // Sort by similarity score (descending) first, then by timestamp (descending)
+            if (b.similarityScore !== a.similarityScore) {
+                return b.similarityScore - a.similarityScore;
+            }
+            return b.timestamp - a.timestamp;
+        });
+    }
+
+    public async initiateActiveCrawl(query: string): Promise<string> {
+        if (!query) {
+            return this.currentActiveQuery;
+        }
+        this.currentActiveQuery = query;
+        await this.saveCurrentActiveQuery(query);
+        return this.currentActiveQuery;
     }
 
     public async markAsIngested(url: string): Promise<boolean> {
         const memoryIndex = this.memoryStore.findIndex(item => item.url === url);
         if (memoryIndex !== -1) {
-            this.memoryStore[memoryIndex].ingested = true;
-            this.memoryStore[memoryIndex].content = null;
-            return true;
+            const [memoryItem] = this.memoryStore.splice(memoryIndex, 1);
+            memoryItem.ingested = true;
+            memoryItem.content = undefined; // Remove content from memory
+
+            // Insert the ingested item into the database
+            return new Promise((resolve, reject) => {
+                this.db.insert(memoryItem, (err: any) => {
+                    if (err) {
+                        console.error(`Failed to move ingested item to DB for URL ${url}:`, err);
+                        reject(err);
+                    } else {
+                        console.log(`Ingested item for URL ${url} moved to DB.`);
+                        resolve(true);
+                    }
+                });
+            });
         }
 
         return new Promise((resolve, reject) => {
-            this.db.update({ url }, { $set: { ingested: true, content: null } }, {}, (err: any, numReplaced: number) => {
+            this.db.update({ url }, { $set: { ingested: true, content: undefined } }, {}, (err: any, numReplaced: number) => {
                 if (err) {
                     reject(err);
                 } else {
@@ -152,18 +234,24 @@ export class CrawlStore {
         });
     }
 
-    public async getUnIngested(): Promise<StoredCrawlData[]> {
+    public async getUnIngested(limit: number = 50): Promise<StoredCrawlData[]> {
         const memoryUnIngested = this.memoryStore.filter(item => !item.ingested);
 
-        return new Promise((resolve, reject) => {
-            this.db.find({ ingested: false }, (err: any, docs: StoredCrawlData[]) => {
-                if (err) {
-                    reject(err);
-                } else {
-                    resolve([...memoryUnIngested, ...docs]);
-                }
-            });
+        let dbEntries: StoredCrawlData[] = [];
+        dbEntries = await new Promise((resolve, reject) => {
+            this.db.find({ ingested: false })
+                .sort({ similarityScore: -1, timestamp: -1 })
+                .limit(limit)
+                .exec((err: any, docs: StoredCrawlData[]) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(docs);
+                    }
+                });
         });
+
+        return [...memoryUnIngested, ...dbEntries].slice(0, limit);
     }
 
     private async removeOldestEntries(count: number): Promise<void> {
@@ -191,38 +279,40 @@ export class CrawlStore {
      */
     private async removeDuplicateUrls(): Promise<void> {
         return new Promise((resolve, reject) => {
-            this.db.find({}).sort({ url: 1, timestamp: -1 }).exec(async (err: any, docs: StoredCrawlData[]) => {
-                if (err) {
-                    reject(err);
-                } else {
-                    const urlMap: Record<string, StoredCrawlData> = {};
-                    const duplicates: string[] = [];
+            this.db.find({})
+                .sort({ url: 1, timestamp: -1 })
+                .exec(async (err: any, docs: StoredCrawlData[]) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        const urlMap: Record<string, StoredCrawlData> = {};
+                        const duplicates: string[] = [];
 
-                    for (const doc of docs) {
-                        if (urlMap[doc.url]) {
-                            duplicates.push(doc._id);
-                        } else {
-                            urlMap[doc.url] = doc;
+                        for (const doc of docs) {
+                            if (urlMap[doc.url]) {
+                                duplicates.push(doc._id);
+                            } else {
+                                urlMap[doc.url] = doc;
+                            }
                         }
+
+                        if (duplicates.length === 0) {
+                            resolve();
+                            return;
+                        }
+
+                        const removePromises = duplicates.map((id) =>
+                            new Promise<void>((res, rej) => {
+                                this.db.remove({ _id: id }, {}, (removeErr: any) => {
+                                    if (removeErr) rej(removeErr);
+                                    else res();
+                                });
+                            })
+                        );
+
+                        Promise.all(removePromises).then(() => resolve()).catch(reject);
                     }
-
-                    if (duplicates.length === 0) {
-                        resolve();
-                        return;
-                    }
-
-                    const removePromises = duplicates.map((id) =>
-                        new Promise<void>((res, rej) => {
-                            this.db.remove({ _id: id }, {}, (removeErr: any) => {
-                                if (removeErr) rej(removeErr);
-                                else res();
-                            });
-                        })
-                    );
-
-                    Promise.all(removePromises).then(() => resolve()).catch(reject);
-                }
-            });
+                });
         });
     }
 

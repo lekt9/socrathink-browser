@@ -10,6 +10,8 @@ import { ModuleThread, Pool, spawn, Worker } from 'threads';
 import { app } from 'electron';
 import * as Datastore from '@seald-io/nedb';
 import { getPath } from '~/utils';
+import { search, SafeSearchType } from 'duck-duck-scrape';
+import { similarity } from '@nlpjs/similarity';
 
 export interface CrawledData {
     url: string;
@@ -25,6 +27,7 @@ export interface QueueItem {
     url: string;
     depth: number;
     timestamp: number;
+    similarityScore: number;
 }
 
 const workerPath = app.isPackaged
@@ -62,11 +65,11 @@ export class QueueManager {
     constructor(crawlStore: CrawlStore, pool: Pool<CrawlerWorker>) {
         this.crawlStore = crawlStore;
         this.pool = Pool(() => spawn<CrawlerWorker>(new Worker(workerPath)), {
-            size: 1,
-            concurrency: 1
+            size: 3,
+            concurrency: 3
         });
         this.queueStore = new Datastore<QueueItem>({
-            filename: getPath('storage/q.db'),
+            filename: getPath('storage/queue-manager.db'),
             autoload: true,
         });
 
@@ -81,36 +84,26 @@ export class QueueManager {
                 console.error('Error creating index on timestamp:', err);
             }
         });
+        this.queueStore.ensureIndex({ fieldName: 'similarityScore' }, (err) => {
+            if (err) {
+                console.error('Error creating index on similarityScore:', err);
+            }
+        });
     }
 
-    public async enqueue(url: string, depth: number = 1): Promise<void> {
-        console.log('enqueue', url);
-        const existingEntry = await this.crawlStore.get(url);
-        console.log('existingEntry', existingEntry);
-        if (existingEntry && existingEntry.content) {
-            console.log(`Skipping ${url}: Already crawled`);
-            return;
+    private calculateSimilarityScore(url: string): number {
+        if (!this.crawlStore.currentActiveQuery) {
+            return 0;
         }
-        const urlObj = new URL(url);
-        if (urlObj.protocol !== 'https:' && urlObj.protocol !== 'http:' && urlObj.protocol !== 'socrathink:') {
-            console.log(`Skipping ${url}: Only HTTPS, HTTP, and socrathink protocols are allowed`);
-            return;
-        }
-
-        const newItem: QueueItem = { url, depth, timestamp: Date.now() };
-
-        if (this.memoryQueue.length < this.MEMORY_QUEUE_SIZE) {
-            this.memoryQueue.push(newItem);
-            this.sortMemoryQueue();
-        } else {
-            await this.insertQueueItem(newItem);
-        }
-
-        await this.processQueue();
+        const sim = similarity(this.crawlStore.currentActiveQuery, url);
+        return sim;
     }
 
     private sortMemoryQueue(): void {
         this.memoryQueue.sort((a, b) => {
+            if (a.similarityScore !== b.similarityScore) {
+                return b.similarityScore - a.similarityScore;
+            }
             if (a.depth !== b.depth) {
                 return a.depth - b.depth;
             }
@@ -177,6 +170,9 @@ export class QueueManager {
     }
 
     private getNextMemoryQueueItem(): QueueItem | null {
+        // Sort the memory queue by similarity score in descending order
+        this.memoryQueue.sort((a, b) => b.similarityScore - a.similarityScore);
+
         const index = this.memoryQueue.findIndex(item => {
             const domain = new URL(item.url).hostname;
             return domain !== this.lastProcessedDomain;
@@ -186,14 +182,15 @@ export class QueueManager {
             return this.memoryQueue.splice(index, 1)[0];
         }
 
-        // If all items are from the same domain, return the first item
+        // If all items are from the same domain, return the first item (highest similarity score)
         return this.memoryQueue.shift() || null;
     }
+
 
     private async getNextStoredQueueItem(): Promise<QueueItem | null> {
         return new Promise((resolve, reject) => {
             this.queueStore.find({})
-                .sort({ depth: 1, timestamp: -1 })
+                .sort({ similarityScore: -1, depth: 1, timestamp: -1 })
                 .exec((err, docs) => {
                     if (err) {
                         console.error('Error fetching next queue item:', err);
@@ -212,7 +209,7 @@ export class QueueManager {
     private async repopulateMemoryQueue(): Promise<void> {
         return new Promise((resolve, reject) => {
             this.queueStore.find({})
-                .sort({ depth: 1, timestamp: -1 })
+                .sort({ similarityScore: -1, depth: 1, timestamp: -1 })
                 .limit(this.MEMORY_QUEUE_SIZE)
                 .exec((err, docs) => {
                     if (err) {
@@ -248,7 +245,8 @@ export class QueueManager {
     private async handleCrawlResult(result: CrawledData) {
         const { url, rawHtml, content, links, depth, lastModified } = result;
         if (rawHtml && content) {
-            const added = await this.crawlStore.add(url, rawHtml, content, depth, lastModified, (err) => {
+            const similarityScore = this.calculateSimilarityScore(content);
+            const added = await this.crawlStore.add(url, rawHtml, content, depth, lastModified, similarityScore, (err) => {
                 if (err) {
                     console.error(`Error adding URL: ${url}`, err);
                 }
@@ -259,10 +257,39 @@ export class QueueManager {
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
             for (const link of links) {
-                await this.enqueue(link, depth + 1);
+                const linkSimilarityScore = this.calculateSimilarityScore(content);
+                console.log('linkSimilarityScore', linkSimilarityScore);
+                await this.enqueue(link, depth + 1, linkSimilarityScore);
             }
         }
         console.log(`Processed URL: ${url}, extracted ${links.length} links, depth: ${depth}`);
+    }
+
+    private async enqueue(url: string, depth: number = 1, similarityScore?: number): Promise<void> {
+        console.log('enqueue', url);
+        const existingEntry = await this.crawlStore.get(url);
+        console.log('existingEntry', existingEntry);
+        if (existingEntry && existingEntry.content) {
+            console.log(`Skipping ${url}: Already crawled`);
+            return;
+        }
+        const urlObj = new URL(url);
+        if (urlObj.protocol !== 'https:' && urlObj.protocol !== 'http:' && urlObj.protocol !== 'socrathink:') {
+            console.log(`Skipping ${url}: Only HTTPS, HTTP, and socrathink protocols are allowed`);
+            return;
+        }
+
+        similarityScore = similarityScore ?? this.calculateSimilarityScore(url);
+        const newItem: QueueItem = { url, depth, timestamp: Date.now(), similarityScore };
+
+        if (this.memoryQueue.length < this.MEMORY_QUEUE_SIZE) {
+            this.memoryQueue.push(newItem);
+            this.sortMemoryQueue();
+        } else {
+            await this.insertQueueItem(newItem);
+        }
+
+        await this.processQueue();
     }
 
     private handleFailedCrawl(url: string): void {
@@ -282,13 +309,27 @@ export class QueueManager {
         });
 
         // Re-enqueue the failed URL with MAX_DEPTH
-        const failedItem: QueueItem = { url, depth: this.MAX_DEPTH, timestamp: Date.now() };
+        const failedItem: QueueItem = {
+            url,
+            depth: this.MAX_DEPTH,
+            timestamp: Date.now(),
+            similarityScore: this.calculateSimilarityScore(url)
+        };
         this.enqueue(failedItem.url, failedItem.depth);
     }
 
-    private async hashString(str: string): Promise<string> {
-        return await sha256(str);
-    }
+    // private async fetchRelevantInitialUrls(query: string, size: number): Promise<string[]> {
+    //     try {
+    //         const searchResults = await search(query, {
+    //             safeSearch: SafeSearchType.STRICT
+    //         });
+
+    //         return searchResults.results.map((result) => result.url).slice(0, size);
+    //     } catch (error) {
+    //         console.error('Error fetching initial URLs from DuckDuckGo:', error);
+    //         return [];
+    //     }
+    // }
 
     public async addInitialUrl(url: string): Promise<void> {
         console.log('addInitialUrl', url);

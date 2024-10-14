@@ -8,8 +8,11 @@ import { CrawlStore, StoredCrawlData } from '~/renderer/views/app/store/crawl-st
 import { async } from 'rxjs';
 import { NetworkStore, StoredNetworkData } from '~/renderer/views/app/store/network-store';
 import { run } from '~/utils/model';
+import { QueueManager } from './queue-manager';
 
 export class ContextService {
+    private queueManager: QueueManager;
+
     constructor() {
         this.setupIpcHandlers();
     }
@@ -124,6 +127,25 @@ export class ContextService {
                 };
             }
         });
+
+        ipcMain.handle('initiate-active-crawl', async (event, query: string) => {
+            try {
+                const crawlStore = await CrawlStore.getInstance();
+                const results = await crawlStore.initiateActiveCrawl(query);
+                return {
+                    ok: true,
+                    status: 200,
+                    data: results,
+                };
+            } catch (error) {
+                console.error('Initiate active crawl error:', error);
+                return {
+                    ok: false,
+                    status: 500,
+                    data: 'Internal server error',
+                };
+            }
+        });
     }
 
     private async fetchContext(crawlStore: CrawlStore): Promise<StoredCrawlData[]> {
@@ -174,8 +196,8 @@ export async function getAuthInfo(url: string, options: AuthFetchOptions = {}): 
 
     // Parse the URL
     const parsedUrl = new URL(url);
+    const cookies = await Application.instance.sessions.view.cookies.get({ domain: parsedUrl.hostname });
 
-    const cookies = await Application.instance.sessions.view.cookies.get({ url });
     const cookieHeader = cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
 
     // Get the user agent
