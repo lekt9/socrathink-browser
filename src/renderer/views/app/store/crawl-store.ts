@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 import * as Datastore from '@seald-io/nedb';
 import { getPath } from '~/utils';
 import { isContentUseful } from '~/utils/parse';
@@ -16,18 +17,19 @@ export interface StoredCrawlData {
     similarityScore?: number;
 }
 
-export class CrawlStore {
+export class CrawlStore extends EventEmitter {
     private static instance: CrawlStore;
     private db: Datastore;
     private settingsDb: Datastore;
     private memoryStore: StoredCrawlData[] = [];
-    private readonly MAX_ITEMS = 5000;
+    private readonly MAX_ITEMS = 1000;
     private readonly MEMORY_STORE_SIZE = 200;
     public currentActiveQuery: string | null = null;
 
     private constructor() {
+        super();
         this.db = new Datastore({
-            filename: getPath('storage/crawl-store_db.db'),
+            filename: getPath('storage/crawl_db.db'),
             autoload: true,
         });
 
@@ -96,6 +98,7 @@ export class CrawlStore {
                         console.error('Error saving currentActiveQuery:', err);
                         reject(err);
                     } else {
+                        this.emit('queryChanged', query); // Emit event after saving
                         resolve();
                     }
                 }
@@ -186,8 +189,8 @@ export class CrawlStore {
     private sortMemoryStore(): void {
         this.memoryStore.sort((a, b) => {
             // Sort by similarity score (descending) first, then by timestamp (descending)
-            if (b.similarityScore !== a.similarityScore) {
-                return b.similarityScore - a.similarityScore;
+            if ((b.similarityScore || 0) !== (a.similarityScore || 0)) {
+                return (b.similarityScore || 0) - (a.similarityScore || 0);
             }
             return b.timestamp - a.timestamp;
         });
@@ -261,10 +264,10 @@ export class CrawlStore {
                     reject(err);
                 } else {
                     const removePromises = docs.map((doc: { _id: any; }) =>
-                        new Promise<void>((resolve, reject) => {
+                        new Promise<void>((res, rej) => {
                             this.db.remove({ _id: doc._id }, {}, (err: any) => {
-                                if (err) reject(err);
-                                else resolve();
+                                if (err) rej(err);
+                                else res();
                             });
                         })
                     );

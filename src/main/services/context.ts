@@ -163,7 +163,7 @@ export class ContextService {
         // Filter and sort non-depth 0 entries by timestamp, most recent first
         const sortedNonDepth0Entries = unIngestedEntries
             .filter(entry => entry.depth !== 0 && entry.depth !== null)
-            .sort((a, b) => a.timestamp - b.timestamp);
+            .sort((a, b) => b.similarityScore - a.similarityScore)
 
         // Get the top 10 non-depth 0 entries
         const top10NonDepth0 = sortedNonDepth0Entries;

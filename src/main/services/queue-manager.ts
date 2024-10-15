@@ -1,4 +1,4 @@
-import { simpleFetch } from '~/utils/hybrid-fetch';
+import { hybridFetch, simpleFetch } from '~/utils/hybrid-fetch';
 import { handleContextOmnidoraRequest } from '..';
 import { sha256 } from 'hash-wasm';
 import { CrawlStore } from '~/renderer/views/app/store/crawl-store';
@@ -28,6 +28,8 @@ export interface QueueItem {
     depth: number;
     timestamp: number;
     similarityScore: number;
+    metric: number;
+    parentContent?: string;
 }
 
 const workerPath = app.isPackaged
@@ -41,81 +43,82 @@ export class QueueManager {
     private isProcessing: boolean = false;
     private lastCrawlTime: number = 0;
     private queueStore: Datastore<QueueItem>;
-    private memoryQueue: QueueItem[] = [];
-    private lastProcessedDomain: string | null = null;
 
     private readonly MAX_DEPTH = 3;
     private readonly MAX_CRAWLS: number = -1;
-    private readonly MEMORY_QUEUE_SIZE = 300;
+    private readonly MAX_QUEUE_SIZE = 1000;
 
-    private allowedContentTypes: Set<string> = new Set([
-        'text/html',
-        'text/plain',
-        'text/xml',
-        'application/xml',
-        'application/xhtml+xml',
-        'application/html',
-        'application/xhtml',
-        'text/html-sandboxed',
-        'application/json',
-        'application/ld+json',
-        'application/pdf'
-    ]);
+    // Weights for the metric calculation
+    private readonly WEIGHT_DEPTH = 1.0;
+    private readonly WEIGHT_RECENCY = 1.0;
+    private readonly WEIGHT_SIMILARITY = 1.0;
 
     constructor(crawlStore: CrawlStore, pool: Pool<CrawlerWorker>) {
         this.crawlStore = crawlStore;
         this.pool = Pool(() => spawn<CrawlerWorker>(new Worker(workerPath)), {
             size: 3,
-            concurrency: 3
+            concurrency: 3,
+            maxQueuedJobs: 30
         });
         this.queueStore = new Datastore<QueueItem>({
-            filename: getPath('storage/queue-manager.db'),
+            filename: getPath('storage/qmgr.db'),
             autoload: true,
         });
 
-        // Ensure indexes for efficient sorting
-        this.queueStore.ensureIndex({ fieldName: 'depth' }, (err) => {
-            if (err) {
-                console.error('Error creating index on depth:', err);
-            }
-        });
-        this.queueStore.ensureIndex({ fieldName: 'timestamp' }, (err) => {
-            if (err) {
-                console.error('Error creating index on timestamp:', err);
-            }
-        });
-        this.queueStore.ensureIndex({ fieldName: 'similarityScore' }, (err) => {
-            if (err) {
-                console.error('Error creating index on similarityScore:', err);
-            }
-        });
+        this.purgeQueueStore();
+
+        this.queueStore.ensureIndex({ fieldName: 'url', unique: true });
+        this.queueStore.ensureIndex({ fieldName: 'metric' });
+        this.queueStore.ensureIndex({ fieldName: 'timestamp' });
+        this.queueStore.ensureIndex({ fieldName: 'depth' });
+
+        this.crawlStore.on('queryChanged', this.handleQueryChange.bind(this));
     }
 
-    private calculateSimilarityScore(url: string): number {
+    private async calculateSimilarityScore(text: string): Promise<number> {
         if (!this.crawlStore.currentActiveQuery) {
             return 0;
         }
-        const sim = similarity(this.crawlStore.currentActiveQuery, url);
-        return sim;
+        return similarity(this.crawlStore.currentActiveQuery, text);
     }
 
-    private sortMemoryQueue(): void {
-        this.memoryQueue.sort((a, b) => {
-            if (a.similarityScore !== b.similarityScore) {
-                return b.similarityScore - a.similarityScore;
+    private calculateMetric(item: QueueItem): number {
+        // Calculate recency in milliseconds
+        const now = Date.now();
+        const recency = now - item.timestamp;
+
+        // Normalize recency to a scale (e.g., more recent => higher score)
+        const recencyScore = 1 / (1 + recency / (1000 * 60 * 10)); // 10 minutes decay
+
+        // Composite metric: higher similarity and recency with lower depth are better
+        return (this.WEIGHT_SIMILARITY * item.similarityScore) +
+            (this.WEIGHT_RECENCY * recencyScore) -
+            (this.WEIGHT_DEPTH * item.depth);
+    }
+
+    private purgeQueueStore(): void {
+        this.queueStore.remove({}, { multi: true }, (err, numRemoved) => {
+            if (err) {
+                console.error('Error purging queue store:', err);
+            } else {
+                console.log(`Purged ${numRemoved} items from the queue store`);
             }
-            if (a.depth !== b.depth) {
-                return a.depth - b.depth;
-            }
-            return b.timestamp - a.timestamp;
         });
     }
 
     private async insertQueueItem(item: QueueItem): Promise<void> {
+        const queueSize = await this.getQueueSize();
+        if (queueSize >= this.MAX_QUEUE_SIZE) {
+            await this.removeLowestScoringItem();
+        }
+
+        // Calculate and set the metric
+        item.metric = this.calculateMetric(item);
+
         return new Promise((resolve, reject) => {
             this.queueStore.insert(item, (err) => {
                 if (err) {
-                    console.error('Error inserting queue item:', err);
+                    // console.error('Error inserting queue item:', err);
                     reject(err);
                 } else {
                     resolve();
@@ -124,114 +127,131 @@ export class QueueManager {
         });
     }
 
-    private async processQueue(): Promise<void> {
-        if (this.isProcessing) return;
-        this.isProcessing = true;
-
-        while (this.crawlCount < this.MAX_CRAWLS || this.MAX_CRAWLS === -1) {
-            const nextItem = await this.getNextQueueItem();
-            if (!nextItem) {
-                this.isProcessing = false;
-                return;
-            }
-
-            try {
-                const authInfo: SerializableAuthInfo = await getAuthInfo(nextItem.url);
-                const result = await this.pool.queue(worker => worker.crawlUrl(authInfo, nextItem.depth));
-                await this.handleCrawlResult(result);
-                this.lastProcessedDomain = new URL(nextItem.url).hostname;
-            } catch (error) {
-                console.error(`Error processing URL: ${nextItem.url}`, error);
-                this.handleFailedCrawl(nextItem.url);
-            }
-
-            await this.removeQueueItem(nextItem.url);
-            this.crawlCount++;
-        }
-
-        this.isProcessing = false;
-    }
-
-    private async getNextQueueItem(): Promise<QueueItem | null> {
-        let nextItem: QueueItem | null = null;
-
-        if (this.memoryQueue.length > 0) {
-            nextItem = this.getNextMemoryQueueItem();
-        }
-
-        if (!nextItem) {
-            nextItem = await this.getNextStoredQueueItem();
-            if (nextItem) {
-                await this.repopulateMemoryQueue();
-            }
-        }
-
-        return nextItem;
-    }
-
-    private getNextMemoryQueueItem(): QueueItem | null {
-        // Sort the memory queue by similarity score in descending order
-        this.memoryQueue.sort((a, b) => b.similarityScore - a.similarityScore);
-
-        const index = this.memoryQueue.findIndex(item => {
-            const domain = new URL(item.url).hostname;
-            return domain !== this.lastProcessedDomain;
+    private async getQueueSize(): Promise<number> {
+        return new Promise((resolve, reject) => {
+            this.queueStore.count({}, (err, count) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(count);
+                }
+            });
         });
-
-        if (index !== -1) {
-            return this.memoryQueue.splice(index, 1)[0];
-        }
-
-        // If all items are from the same domain, return the first item (highest similarity score)
-        return this.memoryQueue.shift() || null;
     }
 
-
-    private async getNextStoredQueueItem(): Promise<QueueItem | null> {
+    private async removeLowestScoringItem(): Promise<void> {
         return new Promise((resolve, reject) => {
             this.queueStore.find({})
-                .sort({ similarityScore: -1, depth: 1, timestamp: -1 })
+                .sort({ metric: 1 }) // Lowest metric first
+                .limit(1)
                 .exec((err, docs) => {
                     if (err) {
-                        console.error('Error fetching next queue item:', err);
                         reject(err);
-                    } else {
-                        const nextItem = docs.find(item => {
-                            const domain = new URL(item.url).hostname;
-                            return domain !== this.lastProcessedDomain;
+                    } else if (docs.length > 0) {
+                        this.queueStore.remove({ _id: docs[0]._id }, {}, (removeErr) => {
+                            if (removeErr) {
+                                reject(removeErr);
+                            } else {
+                                resolve();
+                            }
                         });
-                        resolve(nextItem || docs[0] || null);
-                    }
-                });
-        });
-    }
-
-    private async repopulateMemoryQueue(): Promise<void> {
-        return new Promise((resolve, reject) => {
-            this.queueStore.find({})
-                .sort({ similarityScore: -1, depth: 1, timestamp: -1 })
-                .limit(this.MEMORY_QUEUE_SIZE)
-                .exec((err, docs) => {
-                    if (err) {
-                        console.error('Error repopulating memory queue:', err);
-                        reject(err);
                     } else {
-                        this.memoryQueue = docs;
                         resolve();
                     }
                 });
         });
     }
 
-    private async removeQueueItem(url: string): Promise<void> {
-        const memoryIndex = this.memoryQueue.findIndex(item => item.url === url);
-        if (memoryIndex !== -1) {
-            this.memoryQueue.splice(memoryIndex, 1);
+    public async initiateActiveCrawl(query: string): Promise<void> {
+        await this.crawlStore.initiateActiveCrawl(query);
+    }
+
+    public async addInitialUrl(url: string): Promise<void> {
+        console.log('addInitialUrl', url);
+        const similarityScore = await this.calculateSimilarityScore(url);
+        await this.enqueue(url, 0, similarityScore);
+    }
+
+    private async enqueue(url: string, depth: number = 1, similarityScore?: number, parentContent?: string): Promise<void> {
+        console.log('enqueue', url);
+
+        // Check if the URL is already in the CrawlStore
+        const existingEntry = await this.crawlStore.get(url);
+        if (existingEntry) {
+            console.log(`Skipping ${url}: Already in CrawlStore`);
             return;
         }
 
+        const urlObj = new URL(url);
+        if (urlObj.protocol !== 'https:' && urlObj.protocol !== 'http:' && urlObj.protocol !== 'socrathink:') {
+            console.log(`Skipping ${url}: Only HTTPS, HTTP, and socrathink protocols are allowed`);
+            return;
+        }
+
+        similarityScore = similarityScore ?? await this.calculateSimilarityScore(url);
+        const newItem: QueueItem = { url, depth, timestamp: Date.now(), similarityScore, metric: 0, parentContent };
+
+        try {
+            await this.insertQueueItem(newItem);
+        } catch (error: any) {
+            if (error.errorType === 'uniqueViolated') {
+                console.log(`Skipping ${url}: Already in queue`);
+                return;
+            }
+            throw error;
+        }
+
+        await this.processQueue();
+    }
+
+    private async processQueue(): Promise<void> {
+        if (this.isProcessing) return;
+        this.isProcessing = true;
+
+        try {
+            let nextItem = await this.getNextQueueItem();
+
+            while (nextItem && (this.MAX_CRAWLS === -1 || this.crawlCount < this.MAX_CRAWLS)) {
+                try {
+                    console.log('nextItem', nextItem);
+                    const authInfo: SerializableAuthInfo = await getAuthInfo(nextItem.url);
+                    const result = await this.pool.queue(worker => worker.crawlUrl(authInfo, nextItem.depth));
+                    await this.handleCrawlResult(result);
+                    console.log('result', result);
+                } catch (error) {
+                    console.error(`Error processing URL: ${nextItem.url}`, error);
+                    this.handleFailedCrawl(nextItem.url);
+                }
+
+                await this.removeQueueItem(nextItem.url);
+                this.crawlCount++;
+
+                nextItem = await this.getNextQueueItem();
+            }
+        } finally {
+            this.isProcessing = false;
+        }
+    }
+
+    private async getNextQueueItem(): Promise<QueueItem | null> {
         return new Promise((resolve, reject) => {
-            this.queueStore.remove({ url }, {}, (err, numRemoved) => {
+            this.queueStore.find({})
+                .sort({ metric: -1 }) // Highest metric first
+                .limit(1)
+                .exec((err, docs) => {
+                    if (err) {
+                        console.error('Error fetching next queue item:', err);
+                        reject(err);
+                    } else {
+                        resolve(docs[0] || null);
+                    }
+                });
+        });
+    }
+
+    private async removeQueueItem(url: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this.queueStore.remove({ url }, {}, (err) => {
                 if (err) {
                     console.error('Error removing queue item:', err);
                     reject(err);
@@ -242,64 +262,56 @@ export class QueueManager {
         });
     }
 
-    private async handleCrawlResult(result: CrawledData) {
+    private async handleCrawlResult(result: CrawledData): Promise<void> {
         const { url, rawHtml, content, links, depth, lastModified } = result;
         if (rawHtml && content) {
-            const similarityScore = this.calculateSimilarityScore(content);
-            const added = await this.crawlStore.add(url, rawHtml, content, depth, lastModified, similarityScore, (err) => {
+            const similarityScore = await this.calculateSimilarityScore(content);
+            const crawlItem = {
+                url,
+                rawHtml,
+                content,
+                depth,
+                lastModified,
+                similarityScore,
+                metric: this.calculateMetric({
+                    url,
+                    depth,
+                    timestamp: Date.now(),
+                    similarityScore,
+                    metric: 0
+                })
+            };
+            await this.crawlStore.add(url, rawHtml, content, depth, lastModified, similarityScore, (err) => {
                 if (err) {
                     console.error(`Error adding URL: ${url}`, err);
                 }
             });
         }
-        if (depth < this.MAX_DEPTH) {
-            if (depth > 1) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
+
+        const contentLines = content.split('\n');
+        const linkScores = await Promise.all(links.map(async (link) => {
+            const linkIndex = contentLines.findIndex(line => line.includes(link));
+            if (linkIndex === -1) {
+                return { link, score: 0 };
             }
-            for (const link of links) {
-                const linkSimilarityScore = this.calculateSimilarityScore(content);
-                console.log('linkSimilarityScore', linkSimilarityScore);
-                await this.enqueue(link, depth + 1, linkSimilarityScore);
-            }
-        }
+            const start = Math.max(0, linkIndex - 5);
+            const end = Math.min(contentLines.length, linkIndex + 6);
+            const surroundingContent = contentLines.slice(start, end).join('\n');
+            const score = await this.calculateSimilarityScore(surroundingContent);
+            return { link, score, surroundingContent };
+        }));
+
+        await Promise.all(linkScores.map(({ link, score, surroundingContent }) =>
+            this.enqueue(link, depth + 1, score, surroundingContent)
+        ));
+
         console.log(`Processed URL: ${url}, extracted ${links.length} links, depth: ${depth}`);
-    }
-
-    private async enqueue(url: string, depth: number = 1, similarityScore?: number): Promise<void> {
-        console.log('enqueue', url);
-        const existingEntry = await this.crawlStore.get(url);
-        console.log('existingEntry', existingEntry);
-        if (existingEntry && existingEntry.content) {
-            console.log(`Skipping ${url}: Already crawled`);
-            return;
-        }
-        const urlObj = new URL(url);
-        if (urlObj.protocol !== 'https:' && urlObj.protocol !== 'http:' && urlObj.protocol !== 'socrathink:') {
-            console.log(`Skipping ${url}: Only HTTPS, HTTP, and socrathink protocols are allowed`);
-            return;
-        }
-
-        similarityScore = similarityScore ?? this.calculateSimilarityScore(url);
-        const newItem: QueueItem = { url, depth, timestamp: Date.now(), similarityScore };
-
-        if (this.memoryQueue.length < this.MEMORY_QUEUE_SIZE) {
-            this.memoryQueue.push(newItem);
-            this.sortMemoryQueue();
-        } else {
-            await this.insertQueueItem(newItem);
-        }
-
-        await this.processQueue();
     }
 
     private handleFailedCrawl(url: string): void {
         const urlObj = new URL(url);
         const domain = urlObj.hostname;
 
-        // Remove all items with the same domain from memory queue
-        this.memoryQueue = this.memoryQueue.filter(item => !item.url.includes(domain));
-
-        // Remove all items with the same domain from storage
         this.queueStore.remove({ url: new RegExp(`^https?://${domain}`) }, { multi: true }, (err, numRemoved) => {
             if (err) {
                 console.error('Error removing failed crawl items:', err);
@@ -308,31 +320,51 @@ export class QueueManager {
             }
         });
 
-        // Re-enqueue the failed URL with MAX_DEPTH
         const failedItem: QueueItem = {
             url,
             depth: this.MAX_DEPTH,
             timestamp: Date.now(),
-            similarityScore: this.calculateSimilarityScore(url)
+            similarityScore: 0,
+            metric: this.calculateMetric({
+                url,
+                depth: this.MAX_DEPTH,
+                timestamp: Date.now(),
+                similarityScore: 0,
+                metric: 0
+            })
         };
-        this.enqueue(failedItem.url, failedItem.depth);
+        this.enqueue(failedItem.url, failedItem.depth, failedItem.similarityScore);
     }
 
-    // private async fetchRelevantInitialUrls(query: string, size: number): Promise<string[]> {
-    //     try {
-    //         const searchResults = await search(query, {
-    //             safeSearch: SafeSearchType.STRICT
-    //         });
+    private async handleQueryChange(newQuery: string): Promise<void> {
+        console.log('Updating similarity scores due to query change.');
 
-    //         return searchResults.results.map((result) => result.url).slice(0, size);
-    //     } catch (error) {
-    //         console.error('Error fetching initial URLs from DuckDuckGo:', error);
-    //         return [];
-    //     }
-    // }
+        // Add relevant initial URLs
+        const relevantUrls = await this.fetchRelevantInitialUrls(newQuery, 20);
+        for (const url of relevantUrls) {
+            await this.enqueue(url, 0, 100000);
+        }
+        console.log('relevantUrls', relevantUrls);
 
-    public async addInitialUrl(url: string): Promise<void> {
-        console.log('addInitialUrl', url);
-        await this.enqueue(url, 0);
+        // Restart queue processing
+        await this.processQueue();
+    }
+    private async fetchRelevantInitialUrls(query: string, size: number): Promise<string[]> {
+        try {
+            const { links } = await hybridFetch(`https://duckduckgo.com/html/?q=${query}`);
+            const extractedLinks = links.map(link => {
+                const match = link.match(/uddg=([^&]+)/);
+                if (match && match[1]) {
+                    return decodeURIComponent(match[1]);
+                }
+                return link;
+            });
+            console.log('links', extractedLinks);
+
+            return extractedLinks.slice(1, size);
+        } catch (error) {
+            console.error('Error fetching initial URLs from DuckDuckGo:', error);
+            return [];
+        }
     }
 }

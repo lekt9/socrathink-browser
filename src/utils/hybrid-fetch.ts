@@ -73,7 +73,7 @@ function extractLinksFromJson(json: any, baseUrl: string): string[] {
     return [...new Set(links)]; // Remove duplicates
 }
 
-const TIMEOUT = 1000; // 1 second timeout
+const TIMEOUT = 2000; // 1 second timeout
 
 export async function simpleFetch(url: string, options = {}): Promise<any> {
     try {
