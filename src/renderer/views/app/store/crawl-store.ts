@@ -239,13 +239,29 @@ export class CrawlStore extends EventEmitter {
         });
     }
 
-    public async getUnIngested(limit: number = 50): Promise<StoredCrawlData[]> {
+    public async getUnIngested(limit: number = 100): Promise<StoredCrawlData[]> {
         const memoryUnIngested = this.memoryStore.filter(item => !item.ingested);
+        let context: StoredCrawlData[] = [];
+        context = await new Promise((resolve, reject) => {
+            this.db.find({
+                depth: { $lte: 1 },
+                timestamp: { $gte: Date.now() - 1000 * 60 * 5 } // Last 5 minutes
+            })
+                .limit(limit)
+                .sort({ depth: 1, timestamp: -1 })
+                .exec((err: any, docs: StoredCrawlData[]) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(docs);
+                    }
+                });
+        });
 
         let dbEntries: StoredCrawlData[] = [];
         dbEntries = await new Promise((resolve, reject) => {
             this.db.find({ ingested: false })
-                .sort({ similarityScore: -1, timestamp: -1 })
+                .sort({ metric: -1, timestamp: -1 })
                 .limit(limit)
                 .exec((err: any, docs: StoredCrawlData[]) => {
                     if (err) {
@@ -256,7 +272,13 @@ export class CrawlStore extends EventEmitter {
                 });
         });
 
-        return [...memoryUnIngested, ...dbEntries].slice(0, limit);
+        // Combine all entries and remove duplicates based on URL
+        const combinedEntries = [...memoryUnIngested, ...context, ...dbEntries];
+        const uniqueEntries = Array.from(
+            new Map(combinedEntries.map(item => [item.url, item])).values()
+        );
+
+        return uniqueEntries.slice(0, limit);
     }
 
     private async removeOldestEntries(count: number): Promise<void> {

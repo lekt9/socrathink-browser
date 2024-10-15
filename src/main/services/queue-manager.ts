@@ -60,13 +60,13 @@ export class QueueManager {
             maxQueuedJobs: 30
         });
         this.queueStore = new Datastore<QueueItem>({
-            filename: getPath('storage/qmgr.db'),
+            filename: getPath('storage/q-mgr.db'),
             autoload: true,
         });
 
         this.purgeQueueStore();
 
-        this.queueStore.ensureIndex({ fieldName: 'url', unique: true });
+        // this.queueStore.ensureIndex({ fieldName: 'url', unique: true });
         this.queueStore.ensureIndex({ fieldName: 'metric' });
         this.queueStore.ensureIndex({ fieldName: 'timestamp' });
         this.queueStore.ensureIndex({ fieldName: 'depth' });

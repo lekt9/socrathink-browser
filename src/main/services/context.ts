@@ -151,15 +151,15 @@ export class ContextService {
     private async fetchContext(crawlStore: CrawlStore): Promise<StoredCrawlData[]> {
         const unIngestedEntries = await crawlStore.getUnIngested(100);
 
-        // Sort all entries by metric, descending
-        const sortedEntries = unIngestedEntries.sort((a, b) => b.metric - a.metric);
+        // // Sort all entries by metric, descending
+        // const sortedEntries = unIngestedEntries.sort((a, b) => b.metric - a.metric);
 
-        // Take the top 20 entries
-        const topEntries = sortedEntries.slice(0, 50);
+        // // Take the top 20 entries
+        // const topEntries = sortedEntries.slice(0, 50);
 
-        console.log(`Returning ${topEntries.length} entries sorted by metric`);
+        // console.log(`Returning ${topEntries.length} entries sorted by metric`);
 
-        return topEntries;
+        return unIngestedEntries;
     }
 }
 
