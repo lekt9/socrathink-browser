@@ -149,35 +149,17 @@ export class ContextService {
     }
 
     private async fetchContext(crawlStore: CrawlStore): Promise<StoredCrawlData[]> {
-        const unIngestedEntries = await crawlStore.getUnIngested();
+        const unIngestedEntries = await crawlStore.getUnIngested(100);
 
+        // Sort all entries by metric, descending
+        const sortedEntries = unIngestedEntries.sort((a, b) => b.metric - a.metric);
 
-        // Filter and sort depth 0 entries by timestamp, most recent first
-        const sortedDepth0Entries = unIngestedEntries
-            .filter(entry => entry.depth === 0)
-            .sort((a, b) => b.timestamp - a.timestamp);
+        // Take the top 20 entries
+        const topEntries = sortedEntries.slice(0, 50);
 
-        // Get the top 10 depth 0 entries
-        const top10Depth0 = sortedDepth0Entries;
+        console.log(`Returning ${topEntries.length} entries sorted by metric`);
 
-        // Filter and sort non-depth 0 entries by timestamp, most recent first
-        const sortedNonDepth0Entries = unIngestedEntries
-            .filter(entry => entry.depth !== 0 && entry.depth !== null)
-            .sort((a, b) => b.similarityScore - a.similarityScore)
-
-        // Get the top 10 non-depth 0 entries
-        const top10NonDepth0 = sortedNonDepth0Entries;
-
-        const sortedDepthNullEntries = unIngestedEntries
-            .filter(entry => entry.depth === null)
-            .sort((a, b) => b.timestamp - a.timestamp);
-
-        // Combine the results
-        const result = [...top10Depth0, ...top10NonDepth0];
-
-        console.log(`Returning ${result.length} entries (${sortedDepthNullEntries.length} depth null, ${top10Depth0.length} depth 0, ${top10NonDepth0.length} non-depth 0)`);
-
-        return result;
+        return topEntries;
     }
 }
 

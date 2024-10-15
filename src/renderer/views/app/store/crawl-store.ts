@@ -15,6 +15,7 @@ export interface StoredCrawlData {
     lastModified: string | null;
     ingested: boolean;
     similarityScore?: number;
+    metric: number; // Add this line
 }
 
 export class CrawlStore extends EventEmitter {
@@ -112,12 +113,12 @@ export class CrawlStore extends EventEmitter {
 
     public async add(
         url: string,
-        rawHtml: string,
         content: string,
         depth: number,
         lastModified: string | null,
         similarityScore: number,
-        p0: (err: { message: any; }) => void
+        metric: number,
+        callback: (err: { message: any; }) => void
     ): Promise<boolean> {
         if (!isContentUseful(content)) return false;
 
@@ -143,6 +144,7 @@ export class CrawlStore extends EventEmitter {
                 lastModified: lastModified ?? null,
                 ingested: false, // Initialize as not ingested
                 similarityScore,
+                metric,
             };
 
             if (this.memoryStore.length < this.MEMORY_STORE_SIZE) {

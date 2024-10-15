@@ -15,7 +15,6 @@ import { similarity } from '@nlpjs/similarity';
 
 export interface CrawledData {
     url: string;
-    rawHtml: string;
     content: string;
     links: string[];
     completed: boolean;
@@ -263,29 +262,37 @@ export class QueueManager {
     }
 
     private async handleCrawlResult(result: CrawledData): Promise<void> {
-        const { url, rawHtml, content, links, depth, lastModified } = result;
-        if (rawHtml && content) {
+        const { url, content, links, depth, lastModified } = result;
+        if (content) {
             const similarityScore = await this.calculateSimilarityScore(content);
+            const metric = this.calculateMetric({
+                url,
+                depth,
+                timestamp: Date.now(),
+                similarityScore,
+                metric: 0
+            });
             const crawlItem = {
                 url,
-                rawHtml,
                 content,
                 depth,
                 lastModified,
                 similarityScore,
-                metric: this.calculateMetric({
-                    url,
-                    depth,
-                    timestamp: Date.now(),
-                    similarityScore,
-                    metric: 0
-                })
+                metric
             };
-            await this.crawlStore.add(url, rawHtml, content, depth, lastModified, similarityScore, (err) => {
-                if (err) {
-                    console.error(`Error adding URL: ${url}`, err);
+            await this.crawlStore.add(
+                url,
+                content,
+                depth,
+                lastModified,
+                similarityScore,
+                metric,
+                (err) => {
+                    if (err) {
+                        console.error(`Error adding URL: ${url}`, err);
+                    }
                 }
-            });
+            );
         }
 
         const contentLines = content.split('\n');
