@@ -227,7 +227,7 @@ export class QueueManager {
     private async getNextQueueItem(): Promise<QueueItem | null> {
         return new Promise((resolve, reject) => {
             this.queueStore.find({})
-                .sort({ metric: -1 }) // Highest metric first
+                .sort({ depth: 1, metric: -1 }) // Highest metric first
                 .limit(1)
                 .exec((err, docs) => {
                     if (err) {
@@ -255,7 +255,7 @@ export class QueueManager {
 
     private async handleCrawlResult(result: CrawledData): Promise<void> {
         const { url, content, links, depth, lastModified } = result;
-        if (content) {
+        if (content && content.length > 0) {
             const similarityScore = await this.calculateSimilarityScore(content);
             const metric = this.calculateMetric({
                 url,

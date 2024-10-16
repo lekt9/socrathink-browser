@@ -21,6 +21,7 @@ export interface PathInfo {
 
 export interface ProcessedEndpointInfo {
     url: string;
+    method: string;
     requestPayload: any;
     responsePayload: any;
     pathInfo: PathInfo;
@@ -81,14 +82,12 @@ export class EndpointCollector {
             return; // Skip if we've already processed this exact URL
         }
         try {
-
-
-
             const pathInfo = this.extractPathInfo(pair.url, pair.responsePayload);
             const schemaSignature = this.generateSchemaSignature(pair.requestPayload, pair.responsePayload);
 
             const processedInfo: ProcessedEndpointInfo = {
                 ...pair,
+                method: pair.requestPayload.method,
                 pathInfo,
                 schemaSignature,
             };

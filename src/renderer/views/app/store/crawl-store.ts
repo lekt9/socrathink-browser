@@ -30,7 +30,7 @@ export class CrawlStore extends EventEmitter {
     private constructor() {
         super();
         this.db = new Datastore({
-            filename: getPath('storage/crawl_db.db'),
+            filename: getPath('storage/crawler.db'),
             autoload: true,
         });
 
@@ -198,13 +198,28 @@ export class CrawlStore extends EventEmitter {
         });
     }
 
-    public async initiateActiveCrawl(query: string): Promise<string> {
-        if (!query) {
-            return this.currentActiveQuery;
-        }
+    public async initiateActiveCrawl(query: string): Promise<StoredCrawlData[]> {
         this.currentActiveQuery = query;
         await this.saveCurrentActiveQuery(query);
-        return this.currentActiveQuery;
+        let context: StoredCrawlData[] = [];
+        context = await new Promise((resolve, reject) => {
+            this.db.find({
+                depth: { $lte: 1 },
+                content: { $ne: null }
+                // timestamp: { $gte: Date.now() - 1000 * 60 * 5 } // Last 5 minutes
+            })
+                .limit(50)
+                .sort({ timestamp: -1 })
+                .exec((err: any, docs: StoredCrawlData[]) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(docs);
+                    }
+                });
+        });
+
+        return context;
     }
 
     public async markAsIngested(url: string): Promise<boolean> {
@@ -212,7 +227,7 @@ export class CrawlStore extends EventEmitter {
         if (memoryIndex !== -1) {
             const [memoryItem] = this.memoryStore.splice(memoryIndex, 1);
             memoryItem.ingested = true;
-            memoryItem.content = undefined; // Remove content from memory
+            // memoryItem.content = undefined; // Remove content from memory
 
             // Insert the ingested item into the database
             return new Promise((resolve, reject) => {
@@ -229,7 +244,8 @@ export class CrawlStore extends EventEmitter {
         }
 
         return new Promise((resolve, reject) => {
-            this.db.update({ url }, { $set: { ingested: true, content: undefined } }, {}, (err: any, numReplaced: number) => {
+            this.db.update({ url }, { $set: { ingested: true } }, {}, (err: any, numReplaced: number) => {
+                // this.db.update({ url }, { $set: { ingested: true, content: undefined } }, {}, (err: any, numReplaced: number) => {
                 if (err) {
                     reject(err);
                 } else {
@@ -241,22 +257,6 @@ export class CrawlStore extends EventEmitter {
 
     public async getUnIngested(limit: number = 100): Promise<StoredCrawlData[]> {
         const memoryUnIngested = this.memoryStore.filter(item => !item.ingested);
-        let context: StoredCrawlData[] = [];
-        context = await new Promise((resolve, reject) => {
-            this.db.find({
-                depth: { $lte: 1 },
-                timestamp: { $gte: Date.now() - 1000 * 60 * 5 } // Last 5 minutes
-            })
-                .limit(limit)
-                .sort({ depth: 1, timestamp: -1 })
-                .exec((err: any, docs: StoredCrawlData[]) => {
-                    if (err) {
-                        reject(err);
-                    } else {
-                        resolve(docs);
-                    }
-                });
-        });
 
         let dbEntries: StoredCrawlData[] = [];
         dbEntries = await new Promise((resolve, reject) => {
@@ -273,12 +273,9 @@ export class CrawlStore extends EventEmitter {
         });
 
         // Combine all entries and remove duplicates based on URL
-        const combinedEntries = [...memoryUnIngested, ...context, ...dbEntries];
-        const uniqueEntries = Array.from(
-            new Map(combinedEntries.map(item => [item.url, item])).values()
-        );
+        const combinedEntries = [...memoryUnIngested, ...dbEntries];
 
-        return uniqueEntries.slice(0, limit);
+        return combinedEntries;
     }
 
     private async removeOldestEntries(count: number): Promise<void> {
