@@ -29,12 +29,12 @@ export class NetworkStore {
   private db: Datastore;
   private crawl: CrawlStore;
   private memoryStore: StoredNetworkData[] = [];
-  private readonly MAX_ITEMS = 5000;
-  private readonly MEMORY_STORE_SIZE = 100;
+  private readonly MAX_ITEMS = 500;
+  private readonly MEMORY_STORE_SIZE = 50;
 
   private constructor(crawl: CrawlStore) {
     this.db = new Datastore({
-      filename: getPath('storage/network_store.db'),
+      filename: getPath('storage/nwk_store.db'),
       autoload: true,
     });
     this.crawl = crawl;
@@ -93,7 +93,7 @@ export class NetworkStore {
     } else {
       const currentCount = await this.size();
       if (currentCount >= this.MAX_ITEMS) {
-        await this.removeOldestEntries(1);
+        await this.removeOldestEntries(currentCount - this.MAX_ITEMS);
       }
       return new Promise((resolve, reject) => {
         this.db.insert(newEntry, (err: any, doc: StoredNetworkData) => {

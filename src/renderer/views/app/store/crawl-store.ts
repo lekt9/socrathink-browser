@@ -23,7 +23,7 @@ export class CrawlStore extends EventEmitter {
     private db: Datastore;
     private settingsDb: Datastore;
     private memoryStore: StoredCrawlData[] = [];
-    private readonly MAX_ITEMS = 1000;
+    private readonly MAX_ITEMS = 500;
     private readonly MEMORY_STORE_SIZE = 200;
     public currentActiveQuery: string | null = null;
 
@@ -40,7 +40,7 @@ export class CrawlStore extends EventEmitter {
         });
 
         // Ensure that the 'url' field is unique to prevent duplicates
-        this.db.ensureIndex({ fieldName: 'url', unique: true }, (err) => {
+        this.db.ensureIndex({ fieldName: 'url' }, (err) => {
             if (err) {
                 console.error('Error creating unique index on url:', err);
             } else {
@@ -153,7 +153,7 @@ export class CrawlStore extends EventEmitter {
             } else {
                 const currentCount = await this.size();
                 if (currentCount >= this.MAX_ITEMS) {
-                    await this.removeOldestEntries(1);
+                    await this.removeOldestEntries(currentCount - this.MAX_ITEMS);
                 }
 
                 if (!content) {

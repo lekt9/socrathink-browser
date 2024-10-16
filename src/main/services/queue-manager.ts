@@ -31,10 +31,6 @@ export interface QueueItem {
     parentContent?: string;
 }
 
-const workerPath = app.isPackaged
-    ? `${process.resourcesPath}/worker.bundle.js`
-    : `${app.getAppPath()}/build/worker.bundle.js`;
-
 export class QueueManager {
     private crawlCount: number = 0;
     private crawlStore: CrawlStore;
@@ -45,7 +41,7 @@ export class QueueManager {
 
     private readonly MAX_DEPTH = 3;
     private readonly MAX_CRAWLS: number = -1;
-    private readonly MAX_QUEUE_SIZE = 1000;
+    private readonly MAX_QUEUE_SIZE = 500;
 
     // Weights for the metric calculation
     private readonly WEIGHT_DEPTH = 1.0;
@@ -54,13 +50,9 @@ export class QueueManager {
 
     constructor(crawlStore: CrawlStore, pool: Pool<CrawlerWorker>) {
         this.crawlStore = crawlStore;
-        this.pool = Pool(() => spawn<CrawlerWorker>(new Worker(workerPath)), {
-            size: 3,
-            concurrency: 3,
-            maxQueuedJobs: 30
-        });
+        this.pool = pool;
         this.queueStore = new Datastore<QueueItem>({
-            filename: getPath('storage/q-mgr.db'),
+            filename: getPath('storage/queue-mngr.db'),
             autoload: true,
         });
 
