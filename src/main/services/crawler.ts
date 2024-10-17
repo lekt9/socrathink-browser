@@ -41,7 +41,9 @@ export class LinkProcessor {
     }
 
     public async addInitialUrl(url: string, content: string, depth = 0): Promise<void> {
-        await this.queueManager.addInitialContent(url, content, depth);
+        if (!url.includes("https://app.socrathink/")) {
+            await this.queueManager.addInitialContent(url, content, depth);
+        }
     }
 
     public async terminate() {
