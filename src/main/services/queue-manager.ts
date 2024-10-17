@@ -173,7 +173,7 @@ export class QueueManager {
         await this.enqueue(url, 0, similarityScore);
     }
 
-    private async enqueue(url: string, depth: number = 1, similarityScore?: number, parentContent?: string): Promise<void> {
+    public async enqueue(url: string, depth: number = 1, similarityScore?: number, parentContent?: string): Promise<void> {
         console.log('enqueue', url);
 
         // Check if the URL is already in the CrawlStore
@@ -274,7 +274,6 @@ export class QueueManager {
         const { url, content, links, depth, lastModified } = result;
         console.log('handleCrawlResult', url);
         if (content && content.length > 0) {
-            console.log("content", content);
             const similarityScore = await this.calculateSimilarityScore(content);
             const metric = this.calculateMetric({
                 url,

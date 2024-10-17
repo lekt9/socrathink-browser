@@ -155,25 +155,23 @@ export class DevToolsCrawler {
             return;
         }
 
-        // Check for HTTPS links in postData and add them as initial URLs
-        if (rawBody) {
-            const httpsLinks = this.extractHttpsLinks(rawBody);
-            if (httpsLinks.length > 0)
-                await this.linkProcessor.addInitialUrl(url.split("?")[0], rawBody, -2);
-        }
 
         let processedContent = rawBody;
         try {
             if (mimeType.includes('application/json')) {
                 JSON.parse(rawBody);
+
                 processedContent = rawBody; // Corrected: stringified JSON should already be a string
             } else {
                 processedContent = parseMarkdown(rawBody);
             }
 
-            const links = extractLinks(processedContent, url);
-            for (const link of links) {
-                this.queueManager.enqueue(link, 1);
+
+            // Check for HTTPS links in postData and add them as initial URLs
+            if (processedContent) {
+                const httpsLinks = this.extractHttpsLinks(processedContent);
+                if (httpsLinks.length > 0)
+                    await this.linkProcessor.addInitialUrl(url.split("?")[0], rawBody, -2);
             }
         } catch (error) {
             console.error('Error processing response content:', error);
