@@ -4,6 +4,7 @@ import { sha256 } from 'hash-wasm';
 import { EndpointCollector, generateToolDefinitions, StorableTool } from './tools';
 import { CrawlStore } from './crawl-store';
 import * as fs from 'fs';
+
 export interface StoredNetworkData {
   requestId: string;
   urlHash: string;
@@ -33,11 +34,31 @@ export class NetworkStore {
   private readonly MEMORY_STORE_SIZE = 50;
 
   private constructor(crawl: CrawlStore) {
+    try {
+      this.db = new Datastore({
+        filename: getPath('storage/nwk_store.db'),
+        autoload: true,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('More than 10% of the data file is corrupt')) {
+        console.error('Network store database is corrupt. Resetting...');
+        this.resetDatabase();
+      } else {
+        throw error;
+      }
+    }
+    this.crawl = crawl;
+  }
+
+  private resetDatabase(): void {
+    const filePath = getPath('storage/nwk_store.db');
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
     this.db = new Datastore({
-      filename: getPath('storage/nwk_store.db'),
+      filename: filePath,
       autoload: true,
     });
-    this.crawl = crawl;
   }
 
   public static async getInstance(crawl: CrawlStore): Promise<NetworkStore> {

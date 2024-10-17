@@ -4,6 +4,7 @@ import { getPath } from '~/utils';
 import { isContentUseful } from '~/utils/parse';
 import { extractQueryParams } from '~/utils/url';
 import { sha256 } from 'hash-wasm';
+import * as fs from 'fs';
 
 export interface StoredCrawlData {
     urlHash: string;
@@ -29,15 +30,24 @@ export class CrawlStore extends EventEmitter {
 
     private constructor() {
         super();
-        this.db = new Datastore({
-            filename: getPath('storage/crawler.db'),
-            autoload: true,
-        });
+        try {
+            this.db = new Datastore({
+                filename: getPath('storage/crawler.db'),
+                autoload: true,
+            });
 
-        this.settingsDb = new Datastore({
-            filename: getPath('storage/settings_db.db'),
-            autoload: true,
-        });
+            this.settingsDb = new Datastore({
+                filename: getPath('storage/settings_db.db'),
+                autoload: true,
+            });
+        } catch (error) {
+            if (error instanceof Error && error.message.includes('More than 10% of the data file is corrupt')) {
+                console.error('Crawl store database is corrupt. Resetting...');
+                this.resetDatabases();
+            } else {
+                throw error;
+            }
+        }
 
         // Ensure that the 'url' field is unique to prevent duplicates
         this.db.ensureIndex({ fieldName: 'url' }, (err) => {
@@ -65,6 +75,28 @@ export class CrawlStore extends EventEmitter {
 
         // Load the currentActiveQuery from the settings database
         this.loadCurrentActiveQuery();
+    }
+
+    private resetDatabases(): void {
+        const crawlerDbPath = getPath('storage/crawler.db');
+        const settingsDbPath = getPath('storage/settings_db.db');
+
+        if (fs.existsSync(crawlerDbPath)) {
+            fs.unlinkSync(crawlerDbPath);
+        }
+        if (fs.existsSync(settingsDbPath)) {
+            fs.unlinkSync(settingsDbPath);
+        }
+
+        this.db = new Datastore({
+            filename: crawlerDbPath,
+            autoload: true,
+        });
+
+        this.settingsDb = new Datastore({
+            filename: settingsDbPath,
+            autoload: true,
+        });
     }
 
     public static async getInstance(): Promise<CrawlStore> {

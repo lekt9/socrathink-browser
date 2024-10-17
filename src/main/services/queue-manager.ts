@@ -12,6 +12,7 @@ import * as Datastore from '@seald-io/nedb';
 import { getPath } from '~/utils';
 import { search, SafeSearchType } from 'duck-duck-scrape';
 import { similarity } from '@nlpjs/similarity';
+import * as fs from 'fs';
 
 export interface CrawledData {
     url: string;
@@ -51,10 +52,19 @@ export class QueueManager {
     constructor(crawlStore: CrawlStore, pool: Pool<CrawlerWorker>) {
         this.crawlStore = crawlStore;
         this.pool = pool;
-        this.queueStore = new Datastore<QueueItem>({
-            filename: getPath('storage/queue-mngr.db'),
-            autoload: true,
-        });
+        try {
+            this.queueStore = new Datastore<QueueItem>({
+                filename: getPath('storage/queue-mngr.db'),
+                autoload: true,
+            });
+        } catch (error) {
+            if (error instanceof Error && error.message.includes('More than 10% of the data file is corrupt')) {
+                console.error('Queue store database is corrupt. Resetting...');
+                this.resetQueueStore();
+            } else {
+                throw error;
+            }
+        }
 
         this.purgeQueueStore();
 
@@ -200,24 +210,31 @@ export class QueueManager {
         this.isProcessing = true;
 
         try {
-            let nextItem = await this.getNextQueueItem();
+            while (true) {
+                let nextItem = await this.getNextQueueItem();
 
-            while (nextItem && (this.MAX_CRAWLS === -1 || this.crawlCount < this.MAX_CRAWLS)) {
+                if (!nextItem) {
+                    console.log('Queue is empty. Waiting for new items...');
+                    await new Promise(resolve => setTimeout(resolve, 5000)); // Wait for 5 seconds before checking again
+                    continue;
+                }
+
                 try {
-                    console.log('nextItem', nextItem);
+                    console.log('Processing nextItem', nextItem);
                     const authInfo: SerializableAuthInfo = await getAuthInfo(nextItem.url);
                     const result = await this.pool.queue(worker => worker.crawlUrl(authInfo, nextItem.depth));
                     await this.handleCrawlResult(result);
-                    console.log('result', result);
+                    console.log('Processed result', result);
                 } catch (error) {
                     console.error(`Error processing URL: ${nextItem.url}`, error);
                     this.handleFailedCrawl(nextItem.url);
+                } finally {
+                    await this.removeQueueItem(nextItem.url);
+                    this.crawlCount++;
                 }
 
-                await this.removeQueueItem(nextItem.url);
-                this.crawlCount++;
-
-                nextItem = await this.getNextQueueItem();
+                // Optional: Add a small delay between processing items to avoid overwhelming the system
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
         } finally {
             this.isProcessing = false;
@@ -319,20 +336,8 @@ export class QueueManager {
             }
         });
 
-        const failedItem: QueueItem = {
-            url,
-            depth: this.MAX_DEPTH,
-            timestamp: Date.now(),
-            similarityScore: 0,
-            metric: this.calculateMetric({
-                url,
-                depth: this.MAX_DEPTH,
-                timestamp: Date.now(),
-                similarityScore: 0,
-                metric: 0
-            })
-        };
-        this.enqueue(failedItem.url, failedItem.depth, failedItem.similarityScore);
+        // Instead of re-enqueueing the failed item, we'll just log it and move on
+        console.log(`Skipping failed URL: ${url}`);
     }
 
     private async handleQueryChange(newQuery: string): Promise<void> {
@@ -365,5 +370,16 @@ export class QueueManager {
             console.error('Error fetching initial URLs from DuckDuckGo:', error);
             return [];
         }
+    }
+
+    private resetQueueStore(): void {
+        const filePath = getPath('storage/queue-mngr.db');
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
+        this.queueStore = new Datastore<QueueItem>({
+            filename: filePath,
+            autoload: true,
+        });
     }
 }
