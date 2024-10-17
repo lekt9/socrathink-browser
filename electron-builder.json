@@ -23,27 +23,13 @@
       "releaseType": "release"
     }
   ],
-  "deb": {
-    "fpm": [
-      "static/socrathink.metainfo.xml=/usr/share/metainfo/socrathink.metainfo.xml"
-    ]
-  },
-  "rpm": {
-    "fpm": [
-      "static/socrathink.metainfo.xml=/usr/share/metainfo/socrathink.metainfo.xml"
-    ]
-  },
-  "pacman": {
-    "fpm": [
-      "static/socrathink.metainfo.xml=/usr/share/metainfo/socrathink.metainfo.xml"
-    ]
-  },
   "linux": {
     "target": [
       {
         "target": "deb",
         "arch": [
-          "x64"
+          "x64",
+          "arm64"
         ]
       }
     ],
