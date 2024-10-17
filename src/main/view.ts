@@ -187,8 +187,8 @@ export class View {
 
     this.webContents.addListener('did-finish-load', async () => {
       const url = this.webContents.getURL();
-      console.log('did-finish-load', url)
-      await this.linkProcessor.addInitialUrl(url);
+      const contents = await this.webContents.executeJavaScript('document.documentElement.outerHTML');
+      await this.linkProcessor.addInitialUrl(url, contents);
     });
 
     this.webContents.addListener('did-start-loading', async () => {

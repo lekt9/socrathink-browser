@@ -4,7 +4,7 @@ import { sha256 } from 'hash-wasm';
 import { CrawlStore } from '~/renderer/views/app/store/crawl-store';
 import { getAuthInfo, SerializableAuthInfo } from './context';
 import { extractQueryParams } from '~/utils/url';
-import { parseMarkdown } from '~/utils/parse';
+import { extractLinks, parseMarkdown } from '~/utils/parse';
 import { CrawlerWorker } from './worker';
 import { ModuleThread, Pool, spawn, Worker } from 'threads';
 import { app } from 'electron';
@@ -381,5 +381,45 @@ export class QueueManager {
             filename: filePath,
             autoload: true,
         });
+    }
+
+    public async addInitialContent(url: string, content: string): Promise<void> {
+        console.log('addInitialContent', url);
+        const similarityScore = await this.calculateSimilarityScore(content);
+        const depth = 0;
+        const lastModified = null; // You might want to add this as a parameter if available
+        const metric = this.calculateMetric({
+            url,
+            depth,
+            timestamp: Date.now(),
+            similarityScore,
+            metric: 0
+        });
+        const markdown = parseMarkdown(content);
+
+        // Add to CrawlStore
+        await this.crawlStore.add(
+            url,
+            markdown,
+            depth,
+            lastModified,
+            similarityScore,
+            metric,
+            (err) => {
+                if (err) {
+                    console.error(`Error adding URL: ${url}`, err);
+                }
+            }
+        );
+
+        // Extract links from the content
+        const links = extractLinks(content, url);
+        // Enqueue extracted links
+        for (const link of links) {
+            await this.enqueue(link, depth + 1);
+        }
+
+        // Start processing the queue
+        await this.processQueue();
     }
 }

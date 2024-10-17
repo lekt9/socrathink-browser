@@ -3,6 +3,7 @@ import { QueueManager } from './queue-manager';
 import { ModuleThread, Pool } from 'threads';
 import { hybridFetch } from '~/utils/hybrid-fetch';
 import { ipcMain } from 'electron';
+import { parseMarkdown } from '~/utils/parse';
 
 export class LinkProcessor {
     private queueManager: QueueManager;
@@ -26,7 +27,7 @@ export class LinkProcessor {
             const { content, links } = await hybridFetch(url);
 
             if (content) {
-                await this.queueManager.enqueue(url, 0);
+                await this.queueManager.addInitialContent(url, content);
             }
 
             for (const link of links) {
@@ -39,8 +40,8 @@ export class LinkProcessor {
         }
     }
 
-    public async addInitialUrl(url: string): Promise<void> {
-        await this.queueManager.addInitialUrl(url);
+    public async addInitialUrl(url: string, content: string): Promise<void> {
+        await this.queueManager.addInitialContent(url, content);
     }
 
     public async terminate() {
