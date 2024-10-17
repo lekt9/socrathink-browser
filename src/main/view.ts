@@ -154,8 +154,8 @@ export class View {
 
     });
 
-    NetworkStore.getInstance().then(networkStore => {
-      this.devToolsCrawler = new DevToolsCrawler(networkStore, this.webContents, this.queueManager)
+    NetworkStore.getInstance(this.crawlStore).then(networkStore => {
+      this.devToolsCrawler = new DevToolsCrawler(networkStore, this.webContents, this.queueManager, this.linkProcessor)
     })
 
     this.webContents.addListener(

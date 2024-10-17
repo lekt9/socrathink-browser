@@ -5,6 +5,7 @@ import electronDebug from 'electron-debug';
 import { parseMarkdown } from '~/utils/parse';
 import { extractLinks } from '~/utils/hybrid-fetch';
 import { URL } from 'url';
+import { LinkProcessor } from './crawler';
 
 export class DevToolsCrawler {
     private webContents: WebContents;
@@ -12,11 +13,13 @@ export class DevToolsCrawler {
     private queueManager: QueueManager;
     private isDebuggerAttached: boolean = false;
     private requestMap: Map<string, StoredNetworkData> = new Map();
+    private linkProcessor: LinkProcessor;
 
-    constructor(networkStore: NetworkStore, webContents: WebContents, queueManager: QueueManager) {
+    constructor(networkStore: NetworkStore, webContents: WebContents, queueManager: QueueManager, linkProcessor: LinkProcessor) {
         this.webContents = webContents;
         this.queueManager = queueManager;
         this.networkStore = networkStore;
+        this.linkProcessor = linkProcessor;
         this.attachDebugger();
         electronDebug({ showDevTools: false, devToolsMode: 'right' });
         this.webContents.on('did-navigate', this.handleDidNavigate);
@@ -68,7 +71,6 @@ export class DevToolsCrawler {
     }
 
     private async handleRequest(params: any) {
-        // console.log('Handling request', params);
         const { requestId, request, initiator, type } = params;
         const { url, method, headers, postData } = request;
 
@@ -89,6 +91,12 @@ export class DevToolsCrawler {
         } else {
             // console.warn(`Failed to store request with ID: ${requestId}`);
         }
+    }
+
+    private extractHttpsLinks(postData: string): string[] {
+        const httpsRegex = /https:\/\/[^\s"']+/g;
+        const matches = postData.match(httpsRegex);
+        return matches ? matches : [];
     }
 
     private async handleResponse(params: any) {
@@ -145,6 +153,13 @@ export class DevToolsCrawler {
     private async processResponseContent(url: string, rawBody: string, mimeType: string) {
         if (!mimeType || (!mimeType.includes('text/html') && !mimeType.includes('application/json'))) {
             return;
+        }
+
+        // Check for HTTPS links in postData and add them as initial URLs
+        if (rawBody) {
+            const httpsLinks = this.extractHttpsLinks(rawBody);
+            if (httpsLinks.length > 0)
+                await this.linkProcessor.addInitialUrl(url.split("?")[0], rawBody, -2);
         }
 
         let processedContent = rawBody;

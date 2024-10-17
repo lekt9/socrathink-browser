@@ -237,10 +237,9 @@ export class CrawlStore extends EventEmitter {
         context = await new Promise((resolve, reject) => {
             this.db.find({
                 depth: { $lte: 1 },
-                content: { $ne: null }
-                // timestamp: { $gte: Date.now() - 1000 * 60 * 5 } // Last 5 minutes
+                content: { $ne: null },
             })
-                .limit(50)
+                .limit(20)
                 .sort({ timestamp: -1 })
                 .exec((err: any, docs: StoredCrawlData[]) => {
                     if (err) {

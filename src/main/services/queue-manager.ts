@@ -272,7 +272,9 @@ export class QueueManager {
 
     private async handleCrawlResult(result: CrawledData): Promise<void> {
         const { url, content, links, depth, lastModified } = result;
+        console.log('handleCrawlResult', url);
         if (content && content.length > 0) {
+            console.log("content", content);
             const similarityScore = await this.calculateSimilarityScore(content);
             const metric = this.calculateMetric({
                 url,
@@ -281,14 +283,7 @@ export class QueueManager {
                 similarityScore,
                 metric: 0
             });
-            const crawlItem = {
-                url,
-                content,
-                depth,
-                lastModified,
-                similarityScore,
-                metric
-            };
+
             await this.crawlStore.add(
                 url,
                 content,
@@ -383,10 +378,9 @@ export class QueueManager {
         });
     }
 
-    public async addInitialContent(url: string, content: string): Promise<void> {
+    public async addInitialContent(url: string, content: string, depth = 0): Promise<void> {
         console.log('addInitialContent', url);
         const similarityScore = await this.calculateSimilarityScore(content);
-        const depth = 0;
         const lastModified = null; // You might want to add this as a parameter if available
         const metric = this.calculateMetric({
             url,

@@ -40,8 +40,8 @@ export class LinkProcessor {
         }
     }
 
-    public async addInitialUrl(url: string, content: string): Promise<void> {
-        await this.queueManager.addInitialContent(url, content);
+    public async addInitialUrl(url: string, content: string, depth = 0): Promise<void> {
+        await this.queueManager.addInitialContent(url, content, depth);
     }
 
     public async terminate() {
